@@ -1196,6 +1196,7 @@ const adminPage = `
                   <option value="HKD">HKD (HK$)</option> // 港币
                   <option value="TWD">TWD (NT$)</option> // 新台币
                   <option value="JPY">JPY (¥)</option>   // 日元
+				  <option value="MYR">MYR (RM)</option>   // 马币
                   <option value="EUR">EUR (€)</option>   // 欧元
                   <option value="GBP">GBP (£)</option>   // 英镑
                   <option value="KRW">KRW (₩)</option>   // 韩元
@@ -2121,7 +2122,7 @@ const lunarBiz = {
 
         const currencySymbols = {
           'CNY': '¥', 'USD': '$', 'HKD': 'HK$', 'TWD': 'NT$', 
-          'JPY': '¥', 'EUR': '€', 'GBP': '£', 'KRW': '₩', 'TRY': '₺'
+          'JPY': '¥', 'MYR': 'RM', 'EUR': '€', 'GBP': '£', 'KRW': '₩', 'TRY': '₺'
         };
         const currencySymbol = currencySymbols[subscription.currency] || '¥';
 
@@ -2325,7 +2326,7 @@ const lunarBiz = {
         // 获取动态货币符号
         const currencySymbols = {
           'CNY': '¥', 'USD': '$', 'HKD': 'HK$', 'TWD': 'NT$', 
-          'JPY': '¥', 'EUR': '€', 'GBP': '£', 'KRW': '₩', 'TRY': '₺'
+          'JPY': '¥', 'MYR': 'RM', 'EUR': '€', 'GBP': '£', 'KRW': '₩', 'TRY': '₺'
         };
         const currency = subscription.currency || 'CNY';
         const symbol = currencySymbols[currency] || '¥';
@@ -5078,7 +5079,7 @@ function dashboardPage() {
     // 定义货币符号映射
     const currencySymbols = {
       'CNY': '¥', 'USD': '$', 'HKD': 'HK$', 'TWD': 'NT$', 
-      'JPY': '¥', 'EUR': '€', 'GBP': '£', 'KRW': '₩', 'TRY': '₺'
+      'JPY': '¥', 'MYR': 'RM', 'EUR': '€', 'GBP': '£', 'KRW': '₩', 'TRY': '₺'
     };
     function getSymbol(currency) {
       return currencySymbols[currency] || '¥';
@@ -7432,6 +7433,7 @@ const FALLBACK_RATES = {
   'HKD': 0.90,
   'TWD': 0.22,
   'JPY': 0.044,
+  'MYR': 1.77,
   'EUR': 8.16,
   'GBP': 9.40,
   'KRW': 0.0048,
