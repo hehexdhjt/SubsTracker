@@ -111,7 +111,7 @@ const themeResources = `
     window.addEventListener('load', async () => {
       if (window.location.pathname.startsWith('/admin')) {
         try {
-          const res = await fetch('/api/config');
+          const res = typeof apiFetch === 'function' ? await apiFetch('/api/config') : await fetch('/api/config');
           const config = await res.json();
           if (config.THEME_MODE && config.THEME_MODE !== localStorage.getItem('themeMode')) {
             localStorage.setItem('themeMode', config.THEME_MODE);

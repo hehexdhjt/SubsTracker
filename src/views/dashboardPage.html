@@ -215,6 +215,16 @@
   </div>
 
   <script>
+    // 统一 API 请求封装：401 自动跳转登录页
+    async function apiFetch(url, options) {
+      const response = await fetch(url, options);
+      if (response.status === 401) {
+        window.location.href = '/';
+        throw new Error('AUTH_EXPIRED');
+      }
+      return response;
+    }
+
     // 定义货币符号映射
     const currencySymbols = {
       'CNY': '¥', 'USD': '$', 'HKD': 'HK$', 'TWD': 'NT$', 
@@ -278,7 +288,7 @@
 
     async function loadDashboardData(){
       try {
-        const r=await fetch('/api/dashboard/stats');
+        const r=await apiFetch('/api/dashboard/stats');
         const d=await r.json();
         if(!d.success) throw new Error(d.message||'加载失败');
         

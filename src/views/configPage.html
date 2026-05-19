@@ -601,6 +601,17 @@
   </div>
 
   <script>
+    // 统一 API 请求封装：401 自动跳转登录页
+    async function apiFetch(url, options) {
+      const response = await fetch(url, options);
+      if (response.status === 401) {
+        showToast('登录已过期，正在跳转登录页...', 'warning');
+        setTimeout(() => { window.location.href = '/'; }, 1000);
+        throw new Error('AUTH_EXPIRED');
+      }
+      return response;
+    }
+
     function showToast(message, type = 'success', duration = 3000) {
       const container = document.getElementById('toast-container');
       const toast = document.createElement('div');
@@ -679,7 +690,7 @@
 
     async function loadConfig() {
       try {
-        const response = await fetch('/api/config');
+        const response = await apiFetch('/api/config');
         const config = await response.json();
 
         // === 安全策略 ===
@@ -945,7 +956,7 @@
       submitButton.disabled = true;
 
       try {
-        const response = await fetch('/api/config', {
+        const response = await apiFetch('/api/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(config)
@@ -1065,7 +1076,7 @@
       }
 
       try {
-        const response = await fetch('/api/test-notification', {
+        const response = await apiFetch('/api/test-notification', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ type: type, ...config })
@@ -1184,7 +1195,7 @@
     async function showSystemTime() {
       try {
         // 获取后台配置的时区
-        const response = await fetch('/api/config');
+        const response = await apiFetch('/api/config');
         const config = await response.json();
         globalTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
         
@@ -1264,7 +1275,7 @@
         }
         timezoneCheckTimer = setInterval(async () => {
           try {
-            const response = await fetch('/api/config');
+            const response = await apiFetch('/api/config');
             await response.json();
             const newTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 

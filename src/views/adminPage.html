@@ -705,6 +705,17 @@
   </div>
 
   <script>
+    // 统一 API 请求封装：401 自动跳转登录页
+    async function apiFetch(url, options) {
+      const response = await fetch(url, options);
+      if (response.status === 401) {
+        showToast('登录已过期，正在跳转登录页...', 'warning');
+        setTimeout(() => { window.location.href = '/'; }, 1000);
+        throw new Error('AUTH_EXPIRED');
+      }
+      return response;
+    }
+
     // 农历转换工具函数 - 前端版本
     const lunarCalendar = {
       // 农历数据 (1900-2100年)
@@ -1630,7 +1641,7 @@ const lunarBiz = {
           tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><i class="fas fa-spinner fa-spin mr-2"></i>加载中...</td></tr>';
         }
 
-        const response = await fetch('/api/subscriptions');
+        const response = await apiFetch('/api/subscriptions');
         const data = await response.json();
 
         subscriptionsCache = Array.isArray(data) ? data : [];
@@ -1664,7 +1675,7 @@ const lunarBiz = {
         button.disabled = true;
 
         try {
-            const response = await fetch('/api/subscriptions/' + id + '/test-notify', { method: 'POST' });
+            const response = await apiFetch('/api/subscriptions/' + id + '/test-notify', { method: 'POST' });
             let result = null;
             try {
               result = await response.json();
@@ -1692,7 +1703,7 @@ const lunarBiz = {
         const id = button.dataset.id;
 
         try {
-            const response = await fetch('/api/subscriptions/' + id);
+            const response = await apiFetch('/api/subscriptions/' + id);
             const subscription = await response.json();
             showRenewFormModal(subscription);
         } catch (error) {
@@ -1912,7 +1923,7 @@ const lunarBiz = {
         confirmBtn.disabled = true;
 
         try {
-            const response = await fetch('/api/subscriptions/' + subscriptionId + '/renew', {
+            const response = await apiFetch('/api/subscriptions/' + subscriptionId + '/renew', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(options)
@@ -1951,7 +1962,7 @@ const lunarBiz = {
         const id = button.dataset.id;
 
         try {
-            const response = await fetch('/api/subscriptions/' + id + '/payments');
+            const response = await apiFetch('/api/subscriptions/' + id + '/payments');
             const result = await response.json();
 
             if (!result.success) {
@@ -1960,7 +1971,7 @@ const lunarBiz = {
             }
 
             const payments = result.payments || [];
-            const subscriptionResponse = await fetch('/api/subscriptions/' + id);
+            const subscriptionResponse = await apiFetch('/api/subscriptions/' + id);
             const subscriptionData = await subscriptionResponse.json();
             const subscription = subscriptionData;
 
@@ -2095,7 +2106,7 @@ const lunarBiz = {
         }
 
         try {
-            const response = await fetch(`/api/subscriptions/${subscriptionId}/payments/${paymentId}`, {
+            const response = await apiFetch(`/api/subscriptions/${subscriptionId}/payments/${paymentId}`, {
                 method: 'DELETE'
             });
             const result = await response.json();
@@ -2118,11 +2129,11 @@ const lunarBiz = {
     window.editPaymentRecord = async function(subscriptionId, paymentId) {
         try {
             // 获取订阅信息
-            const subResponse = await fetch(`/api/subscriptions/${subscriptionId}`);
+            const subResponse = await apiFetch(`/api/subscriptions/${subscriptionId}`);
             const subscription = await subResponse.json();
 
             // 获取支付历史
-            const payResponse = await fetch(`/api/subscriptions/${subscriptionId}/payments`);
+            const payResponse = await apiFetch(`/api/subscriptions/${subscriptionId}/payments`);
             const payResult = await payResponse.json();
 
             const payment = payResult.payments.find(p => p.id === paymentId);
@@ -2225,7 +2236,7 @@ const lunarBiz = {
         confirmBtn.disabled = true;
 
         try {
-            const response = await fetch(`/api/subscriptions/${subscriptionId}/payments/${paymentId}`, {
+            const response = await apiFetch(`/api/subscriptions/${subscriptionId}/payments/${paymentId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(paymentData)
@@ -2271,7 +2282,7 @@ const lunarBiz = {
       button.disabled = true;
       
       try {
-        const response = await fetch('/api/subscriptions/' + id + '/toggle-status', {
+        const response = await apiFetch('/api/subscriptions/' + id + '/toggle-status', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ isActive: isActivate })
@@ -3051,7 +3062,7 @@ const lunarBiz = {
         const url = id ? '/api/subscriptions/' + id : '/api/subscriptions';
         const method = id ? 'PUT' : 'POST';
         
-        const response = await fetch(url, {
+        const response = await apiFetch(url, {
           method: method,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(subscription)
@@ -3081,7 +3092,7 @@ const lunarBiz = {
       const id = e.target.dataset.id || e.target.parentElement.dataset.id;
       
       try {
-        const response = await fetch('/api/subscriptions/' + id);
+        const response = await apiFetch('/api/subscriptions/' + id);
         const subscription = await response.json();
         
         if (subscription) {
@@ -3167,7 +3178,7 @@ const lunarBiz = {
       button.disabled = true;
       
       try {
-        const response = await fetch('/api/subscriptions/' + id, {
+        const response = await apiFetch('/api/subscriptions/' + id, {
           method: 'DELETE'
         });
         
@@ -3217,7 +3228,7 @@ const lunarBiz = {
     // 实时显示系统时间和时区（前端统一本地时区显示）
     async function showSystemTime() {
       try {
-        const response = await fetch('/api/config');
+        const response = await apiFetch('/api/config');
         const config = await response.json();
         window.DEBUG_LOGS = config.DEBUG_LOGS === true;
 
