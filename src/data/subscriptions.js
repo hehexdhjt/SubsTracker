@@ -368,7 +368,7 @@ async function deletePaymentRecord(subscriptionId, paymentId, env) {
     if (paymentHistory.length > 0) {
       const sortedByPeriodEnd = [...paymentHistory].sort((a, b) => {
         const dateA = a.periodEnd ? new Date(a.periodEnd) : new Date(0);
-        const dateB = a.periodEnd ? new Date(a.periodEnd) : new Date(0);
+        const dateB = b.periodEnd ? new Date(b.periodEnd) : new Date(0);
         return dateB - dateA;
       });
 
