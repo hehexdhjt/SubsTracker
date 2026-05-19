@@ -1692,7 +1692,8 @@ const lunarBiz = {
     }
 
     function showRenewFormModal(subscription) {
-        const today = new Date().toISOString().split('T')[0];
+        const now = new Date();
+        const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
         
         // 获取当前到期日的显示文本
         let currentExpiryDisplay = '无';
@@ -2129,7 +2130,7 @@ const lunarBiz = {
 
     function showEditPaymentModal(subscription, payment) {
         const paymentDate = new Date(payment.date);
-        const formattedDate = paymentDate.toISOString().split('T')[0];
+        const formattedDate = paymentDate.getFullYear() + '-' + String(paymentDate.getMonth() + 1).padStart(2, '0') + '-' + String(paymentDate.getDate()).padStart(2, '0');
 
         const modalHtml = `
             <div id="editPaymentModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50" onclick="closeEditPaymentModal(event)">
@@ -2293,7 +2294,8 @@ const lunarBiz = {
       document.getElementById('subscriptionId').value = '';
       clearFieldErrors();
 
-      const today = new Date().toISOString().split('T')[0]; // 前端使用本地时间
+      const now = new Date();
+      const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
       document.getElementById('startDate').value = today;
       document.getElementById('category').value = '';
       document.getElementById('reminderValue').value = '7';
@@ -2953,7 +2955,7 @@ const lunarBiz = {
 		expiry.setFullYear(solar.year);  
 		expiry.setMonth(solar.month - 1);  
 		expiry.setDate(solar.day);  
-		document.getElementById('expiryDate').value = expiry.toISOString().split('T')[0];
+		document.getElementById('expiryDate').value = expiry.getFullYear() + '-' + String(expiry.getMonth() + 1).padStart(2, '0') + '-' + String(expiry.getDate()).padStart(2, '0');
 		debugLog('start:', start);
 		debugLog('nextLunar:', nextLunar);
 		debugLog('expiry:', expiry);
@@ -2976,7 +2978,7 @@ const lunarBiz = {
 		} else if (periodUnit === 'year') {
 		  expiry.setFullYear(start.getFullYear() + periodValue);
 		}
-		document.getElementById('expiryDate').value = expiry.toISOString().split('T')[0];
+		document.getElementById('expiryDate').value = expiry.getFullYear() + '-' + String(expiry.getMonth() + 1).padStart(2, '0') + '-' + String(expiry.getDate()).padStart(2, '0');
 		debugLog('start:', start);
 		debugLog('expiry:', expiry);
 		debugLog('expiryDate:', document.getElementById('expiryDate').value);
