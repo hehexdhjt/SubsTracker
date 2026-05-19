@@ -38,7 +38,7 @@ async function handleDebug(request, env) {
   <div class="info">
     <h3>配置信息</h3>
     <p class="${debugInfo.configExists ? 'success' : 'error'}">配置存在: ${debugInfo.configExists ? '✓' : '✗'}</p>
-    <p>管理员用户名: ${debugInfo.adminUsername}</p>
+    <p>管理员用户名: ${String(debugInfo.adminUsername || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
     <p class="${debugInfo.hasJwtSecret ? 'success' : 'error'}">JWT密钥: ${debugInfo.hasJwtSecret ? '✓' : '✗'} (长度: ${debugInfo.jwtSecretLength})</p>
   </div>
 
