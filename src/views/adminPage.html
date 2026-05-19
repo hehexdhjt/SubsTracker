@@ -426,10 +426,13 @@
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 w-full">
         <div class="flex flex-col sm:flex-row sm:items-center gap-3 w-full lg:flex-1 lg:max-w-2xl">
           <div class="relative flex-1 min-w-[200px] lg:max-w-md">
-            <input type="text" id="searchKeyword" placeholder="搜索名称、类型或备注..." class="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+            <input type="text" id="searchKeyword" placeholder="搜索名称、类型或备注..." class="w-full pl-10 pr-8 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-sm">
             <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-400">
               <i class="fas fa-search"></i>
             </span>
+            <button id="clearSearch" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600" style="display:none;" onclick="document.getElementById('searchKeyword').value='';this.style.display='none';renderSubscriptionTable();">
+              <i class="fas fa-times"></i>
+            </button>
           </div>
           <div class="sm:w-36 lg:w-32">
             <select id="modeFilter" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white text-sm">
@@ -1356,7 +1359,7 @@ const lunarBiz = {
       tbody.innerHTML = '';
 
       if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-gray-500">没有符合条件的订阅</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-gray-500"><div>没有符合条件的订阅</div><button onclick="document.getElementById(\'searchKeyword\').value=\'\';document.getElementById(\'clearSearch\').style.display=\'none\';document.getElementById(\'categoryFilter\').value=\'\';document.getElementById(\'modeFilter\').value=\'\';renderSubscriptionTable();" class="mt-2 text-sm text-indigo-600 hover:text-indigo-800"><i class="fas fa-undo mr-1"></i>清除筛选条件</button></td></tr>';
         return;
       }
 
@@ -1623,7 +1626,9 @@ const lunarBiz = {
 
     const searchInput = document.getElementById('searchKeyword');
     if (searchInput) {
+      const clearBtn = document.getElementById('clearSearch');
       searchInput.addEventListener('input', () => {
+        clearBtn.style.display = searchInput.value ? '' : 'none';
         clearTimeout(searchDebounceTimer);
         searchDebounceTimer = setTimeout(() => renderSubscriptionTable(), 200);
       });
