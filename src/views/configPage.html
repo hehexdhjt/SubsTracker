@@ -36,6 +36,8 @@
     html.dark .toast.error { background-color: #dc2626; }
     html.dark .toast.info { background-color: #2563eb; }
     html.dark .toast.warning { background-color: #d97706; }
+    html.dark #floatingSaveBar { background-color: #1f2937; border-color: #374151; }
+    html.dark #floatingSaveBar span { color: #d1d5db; }
     
     .config-section { 
       border: 1px solid #e5e7eb; 
@@ -609,6 +611,14 @@
     </div>
   </div>
 
+  <!-- 悬浮保存栏 -->
+  <div id="floatingSaveBar" class="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg py-3 px-6 flex justify-between items-center z-50 transform translate-y-full transition-transform duration-300" style="display:none;">
+    <span class="text-sm text-gray-600"><i class="fas fa-exclamation-circle text-yellow-500 mr-2"></i>有未保存的更改</span>
+    <button type="button" onclick="document.getElementById('configForm').requestSubmit()" class="btn-primary text-white px-5 py-2 rounded-md text-sm font-medium">
+      <i class="fas fa-save mr-2"></i>保存配置
+    </button>
+  </div>
+
   <script>
     // 统一 API 请求封装：401 自动跳转登录页
     async function apiFetch(url, options) {
@@ -779,6 +789,9 @@
       } catch (error) {
         console.error('加载配置失败:', error);
         showToast('加载配置失败，请刷新页面重试', 'error');
+        // 禁用表单防止误提交覆盖数据
+        const form = document.getElementById('configForm');
+        Array.from(form.elements).forEach(el => { el.disabled = true; });
       }
     }
     
@@ -1193,6 +1206,39 @@
       wireClearSecretButton('clearPushplusToken', 'pushplusToken', 'PUSHPLUS_TOKEN');
 
       loadConfig();
+
+      // 表单变更检测：显示悬浮保存栏 + beforeunload 提示
+      let configDirty = false;
+      const form = document.getElementById('configForm');
+      const floatingBar = document.getElementById('floatingSaveBar');
+
+      form.addEventListener('input', () => {
+        if (!configDirty) {
+          configDirty = true;
+          floatingBar.style.display = '';
+          requestAnimationFrame(() => floatingBar.style.transform = 'translateY(0)');
+        }
+      });
+      form.addEventListener('change', () => {
+        if (!configDirty) {
+          configDirty = true;
+          floatingBar.style.display = '';
+          requestAnimationFrame(() => floatingBar.style.transform = 'translateY(0)');
+        }
+      });
+
+      // 保存成功后隐藏悬浮栏
+      form.addEventListener('submit', () => {
+        setTimeout(() => {
+          configDirty = false;
+          floatingBar.style.transform = 'translateY(100%)';
+          setTimeout(() => { floatingBar.style.display = 'none'; }, 300);
+        }, 500);
+      });
+
+      window.addEventListener('beforeunload', (e) => {
+        if (configDirty) { e.preventDefault(); e.returnValue = ''; }
+      });
     });
     
     // 前端展示时区（固定使用浏览器本地时区）
