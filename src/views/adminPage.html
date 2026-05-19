@@ -353,6 +353,12 @@
     html.dark .toast.error { background-color: #dc2626; }
     html.dark .toast.info { background-color: #2563eb; }
     html.dark .toast.warning { background-color: #d97706; }
+
+    /* 模态框动画 */
+    #subscriptionModal { transition: opacity 0.2s ease; opacity: 0; }
+    #subscriptionModal:not(.hidden) { opacity: 1; }
+    #subscriptionModal > div { transition: transform 0.2s ease; transform: scale(0.95); }
+    #subscriptionModal:not(.hidden) > div { transform: scale(1); }
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -1833,6 +1839,7 @@ const lunarBiz = {
             '</div>';
 
         document.body.insertAdjacentHTML('beforeend', modalHtml);
+        document.body.classList.add('overflow-hidden');
         document.getElementById('renewForm').dataset.subscriptionId = subscription.id;
         document.getElementById('renewForm').dataset.subscriptionData = JSON.stringify(subscription);
         updateNewExpiryPreview();
@@ -1964,6 +1971,7 @@ const lunarBiz = {
         const modal = document.getElementById('renewFormModal');
         if (modal) {
             modal.remove();
+            document.body.classList.remove('overflow-hidden');
         }
     };
 
@@ -2098,6 +2106,7 @@ const lunarBiz = {
         `;
 
         document.body.insertAdjacentHTML('beforeend', modalHtml);
+        document.body.classList.add('overflow-hidden');
     }
 
     window.closePaymentHistoryModal = function(event) {
@@ -2107,6 +2116,7 @@ const lunarBiz = {
         const modal = document.getElementById('paymentHistoryModal');
         if (modal) {
             modal.remove();
+            document.body.classList.remove('overflow-hidden');
         }
     };
 
@@ -2216,6 +2226,7 @@ const lunarBiz = {
         `;
 
         document.body.insertAdjacentHTML('beforeend', modalHtml);
+        document.body.classList.add('overflow-hidden');
 
         // 保存信息到表单
         document.getElementById('editPaymentForm').dataset.subscriptionId = subscription.id;
@@ -2278,6 +2289,7 @@ const lunarBiz = {
         const modal = document.getElementById('editPaymentModal');
         if (modal) {
             modal.remove();
+            document.body.classList.remove('overflow-hidden');
         }
     };
 
@@ -3024,7 +3036,23 @@ const lunarBiz = {
     
     document.getElementById('closeModal').addEventListener('click', () => {
       document.getElementById('subscriptionModal').classList.add('hidden');
-      document.body.classList.remove('overflow-hidden'); // 恢复页面滚动
+      document.body.classList.remove('overflow-hidden');
+    });
+
+    // ESC 键关闭模态框
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const modal = document.getElementById('subscriptionModal');
+        if (!modal.classList.contains('hidden')) {
+          modal.classList.add('hidden');
+          document.body.classList.remove('overflow-hidden');
+          return;
+        }
+        // 关闭动态模态框
+        const dynamicModals = document.querySelectorAll('#paymentHistoryModal, #renewFormModal, #editPaymentModal');
+        dynamicModals.forEach(m => m.remove());
+        if (dynamicModals.length) document.body.classList.remove('overflow-hidden');
+      }
     });
     
     document.getElementById('subscriptionForm').addEventListener('submit', async (e) => {
