@@ -2285,6 +2285,8 @@ const lunarBiz = {
       const id = e.target.dataset.id || e.target.parentElement.dataset.id;
       const action = e.target.dataset.action || e.target.parentElement.dataset.action;
       const isActivate = action === 'activate';
+
+      if (!isActivate && !confirm('确定要停用此订阅吗？停用后将不再收到到期提醒。')) return;
       
       const button = e.target.tagName === 'BUTTON' ? e.target : e.target.parentElement;
       const originalContent = button.innerHTML;
@@ -3099,7 +3101,9 @@ const lunarBiz = {
     
 	    // 新增修改，编辑订阅时回显 useLunar 字段
     async function editSubscription(e) {
-      const id = e.target.dataset.id || e.target.parentElement.dataset.id;
+      const button = e.target.closest('button');
+      const id = button ? button.dataset.id : (e.target.dataset.id || e.target.parentElement.dataset.id);
+      if (button) { button.disabled = true; button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; }
       
       try {
         const response = await apiFetch('/api/subscriptions/' + id);
@@ -3171,7 +3175,9 @@ const lunarBiz = {
       } catch (error) {
         console.error('获取订阅信息失败:', error);
         showToast('获取订阅信息失败', 'error');
-        isEditingLoading = false; // 异常时也要释放锁
+        isEditingLoading = false;
+      } finally {
+        if (button) { button.disabled = false; button.innerHTML = '<i class="fas fa-edit"></i>'; }
       }
     }
     
