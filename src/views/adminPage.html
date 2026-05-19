@@ -1347,6 +1347,16 @@ const lunarBiz = {
       const getCurrent = type => Number(currentParts.find(x => x.type === type).value);
       const currentDateInTimezone = Date.UTC(getCurrent('year'), getCurrent('month') - 1, getCurrent('day'), 0, 0, 0);
 
+      // 获取当前时间在时区中的精确时间戳（用于小时级对比）
+      const currentTimeDtf = new Intl.DateTimeFormat('en-US', {
+          timeZone: globalTimezone, hour12: false,
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+      const currentFullParts = currentTimeDtf.formatToParts(currentTime);
+      const getFullCurrent = type => Number(currentFullParts.find(x => x.type === type).value);
+      const currentTimestamp = Date.UTC(getFullCurrent('year'), getFullCurrent('month') - 1, getFullCurrent('day'), getFullCurrent('hour'), getFullCurrent('minute'), getFullCurrent('second'));
+
       const displayDtf = new Intl.DateTimeFormat('zh-CN', {
         timeZone: globalTimezone,
         year: 'numeric',
@@ -1373,7 +1383,7 @@ const lunarBiz = {
         const expiryDateInTimezone = Date.UTC(getExpiry('year'), getExpiry('month') - 1, getExpiry('day'), 0, 0, 0);
 
         const daysDiff = Math.round((expiryDateInTimezone - currentDateInTimezone) / (1000 * 60 * 60 * 24));
-        const diffMs = expiryDate.getTime() - currentTime.getTime();
+        const diffMs = expiryDateInTimezone - currentTimestamp;
         const diffHours = diffMs / (1000 * 60 * 60);
 
         const reminder = getReminderSettings(subscription);
@@ -1384,7 +1394,7 @@ const lunarBiz = {
         let statusHtml = '';
         if (!subscription.isActive) {
           statusHtml = '<span class="px-2 py-1 text-xs font-medium rounded-full text-white bg-gray-500"><i class="fas fa-pause-circle mr-1"></i>已停用</span>';
-        } else if (daysDiff < 0) {
+        } else if (daysDiff < 0 || diffMs < 0) {
           statusHtml = '<span class="px-2 py-1 text-xs font-medium rounded-full text-white bg-red-500"><i class="fas fa-exclamation-circle mr-1"></i>已过期</span>';
         } else if (isSoon) {
           statusHtml = '<span class="px-2 py-1 text-xs font-medium rounded-full text-white bg-yellow-500"><i class="fas fa-exclamation-triangle mr-1"></i>即将到期</span>';
