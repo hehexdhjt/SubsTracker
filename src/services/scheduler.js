@@ -1,6 +1,6 @@
 import { getConfig } from '../data/config.js';
 import { getAllSubscriptions } from '../data/subscriptions.js';
-import { getCurrentTimeInTimezone, MS_PER_HOUR, MS_PER_DAY, getTimezoneMidnightTimestamp } from '../core/time.js';
+import { getCurrentTimeInTimezone, MS_PER_HOUR, MS_PER_DAY, getTimezoneMidnightTimestamp, getTimezoneDateParts } from '../core/time.js';
 import { formatNotificationContent, shouldTriggerReminder } from './notify/reminder.js';
 import { sendNotificationToAllChannels } from './notify/index.js';
 import { lunarCalendar, lunarBiz } from '../core/lunar.js';
@@ -41,9 +41,9 @@ async function dedupeNotifications(env, subscriptions, bucketKey) {
 async function checkExpiringSubscriptions(env) {
   try {
     const config = await getConfig(env);
-    const timezone = 'UTC';
-    const currentTime = getCurrentTimeInTimezone('UTC');
-    const todayMidnight = getTimezoneMidnightTimestamp(currentTime, 'UTC');
+    const timezone = config.TIMEZONE || 'UTC';
+    const currentTime = getCurrentTimeInTimezone(timezone);
+    const todayMidnight = getTimezoneMidnightTimestamp(currentTime, timezone);
 
     const subscriptions = await getAllSubscriptions(env);
     const expiringSubscriptions = [];
@@ -53,7 +53,7 @@ async function checkExpiringSubscriptions(env) {
     const normalizedNotificationHours = Array.isArray(config.NOTIFICATION_HOURS)
       ? config.NOTIFICATION_HOURS.map(h => String(h).padStart(2, '0'))
       : [];
-    const currentHour = String(currentTime.getHours()).padStart(2, '0');
+    const currentHour = String(getTimezoneDateParts(currentTime, timezone).hour).padStart(2, '0');
     const shouldNotifyThisHour =
       normalizedNotificationHours.includes('*') ||
       normalizedNotificationHours.includes('ALL') ||
