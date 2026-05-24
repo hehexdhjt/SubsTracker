@@ -1,230 +1,346 @@
+// 注：本文件暂不启用 // @ts-check，因 lunar 库返回类型分支较多，类型清理推迟到后续 Task。
+/**
+ * 定时任务调度器（v3 重写）
+ *
+ * ── 修复的核心问题（#91 / #52 / #166 根因）─────────────────
+ * v2 调度器把"当前 UTC 时刻的小时"当作"用户本地小时"来对比 NOTIFICATION_HOURS，
+ * 配合"通知时段语义不一致"的文档表述，造成大量"不响 / 错时响"。
+ *
+ * v3 修复：
+ * 1. 统一时区基准：通过 getNowInTimezone(config.TIMEZONE) 取用户 TZ 下的 hourString
+ *    与 NOTIFICATION_HOURS（按用户 TZ 解释）比对，语义清晰。
+ * 2. 多提醒规则：从 reminders.repo 加载每个订阅的规则数组，逐条调
+ *    reminder-engine.shouldFire 判断（不再单点 reminderUnit/reminderValue）。
+ * 3. 去重粒度细化：dedup key 改为 (subId × ruleId × ymdh-local)，避免一条订阅
+ *    多规则相互打架。
+ * 4. 结构化日志：每次执行写一条 sched_log；每条通知发送（成功/失败）写 notify_log。
+ *
+ * 数据流：
+ *   Cron tick →
+ *     ensureMigrations →
+ *     load config + subs + rules →
+ *     check window →
+ *     for each (sub, rule):
+ *       - daysDiff/hoursDiff 用 getDaysBetween（按用户 TZ）算
+ *       - 自动续订（针对 sub 整体，仅算一次）
+ *       - shouldFire? → dedupe → dispatch.send → notify_log
+ *     → sched_log
+ *
+ * 维护人：v3 重构 (2026-05)
+ */
+
 import { getConfig } from '../data/config.js';
 import { getAllSubscriptions } from '../data/subscriptions.js';
 import * as subRepo from '../data/subscriptions.repo.js';
-import { getCurrentTimeInTimezone, MS_PER_HOUR, MS_PER_DAY, getTimezoneMidnightTimestamp, getTimezoneDateParts } from '../core/time.js';
-import { formatNotificationContent, shouldTriggerReminder } from './notify/reminder.js';
-import { sendNotificationToAllChannels } from './notify/index.js';
+import * as remindersRepo from '../data/reminders.repo.js';
+import * as schedulerLogsRepo from '../data/scheduler-logs.repo.js';
+import {
+  MS_PER_HOUR,
+  getNowInTimezone,
+  getDaysBetween
+} from '../core/time.js';
+import { formatNotificationContent } from './notify/reminder.js';
+import { dispatch } from './notify/dispatch.js';
+import { shouldFire } from './notify/reminder-engine.js';
 import { lunarCalendar, lunarBiz } from '../core/lunar.js';
 
-async function saveSchedulerStatus(env, status) {
-  try {
-    await env.SUBSCRIPTIONS_KV.put('scheduler_status', JSON.stringify(status));
+const DEDUPE_TTL_SEC = 60 * 60 * 48; // 48h
 
-    const historyLimit = 20;
-    const historyRaw = await env.SUBSCRIPTIONS_KV.get('scheduler_status_history');
-    const history = historyRaw ? JSON.parse(historyRaw) : [];
-    const nextHistory = [status, ...(Array.isArray(history) ? history : [])].slice(0, historyLimit);
-    await env.SUBSCRIPTIONS_KV.put('scheduler_status_history', JSON.stringify(nextHistory));
-  } catch (error) {
-    console.error('[定时任务] 写入执行状态失败:', error);
-  }
-}
-
-async function dedupeNotifications(env, subscriptions, bucketKey) {
-  const deduped = [];
-  let skipped = 0;
-
-  for (const subscription of subscriptions) {
-    const key = `notify_dedupe:${subscription.id}:${bucketKey}`;
-    const exists = await env.SUBSCRIPTIONS_KV.get(key);
-    if (exists) {
-      skipped += 1;
-      continue;
-    }
-
-    await env.SUBSCRIPTIONS_KV.put(key, '1', { expirationTtl: 60 * 60 * 48 });
-    deduped.push(subscription);
-  }
-
-  return { deduped, skipped };
-}
-
-async function checkExpiringSubscriptions(env) {
+/**
+ * 入口：被 Cron 触发的 scheduled() 调用。
+ *
+ * @param {{ SUBSCRIPTIONS_KV: KVNamespace }} env
+ * @returns {Promise<import('../data/scheduler-logs.repo.js').SchedulerLogEntry|null>}
+ */
+export async function checkExpiringSubscriptions(env) {
+  const startedAtIso = new Date().toISOString();
   try {
     const config = await getConfig(env);
     const timezone = config.TIMEZONE || 'UTC';
-    const currentTime = getCurrentTimeInTimezone(timezone);
-    const todayMidnight = getTimezoneMidnightTimestamp(currentTime, timezone);
+    const now = getNowInTimezone(timezone);
+
+    const normalizedHours = Array.isArray(config.NOTIFICATION_HOURS)
+      ? config.NOTIFICATION_HOURS.map((h) => String(h).padStart(2, '0'))
+      : [];
+    const inWindow =
+      normalizedHours.length === 0 ||
+      normalizedHours.includes('*') ||
+      normalizedHours.includes('ALL') ||
+      normalizedHours.includes(now.hourString);
 
     const subscriptions = await getAllSubscriptions(env);
-    const expiringSubscriptions = [];
-    const updatedSubscriptions = [];
-    let hasUpdates = false;
+    let activeCount = 0;
+    let matchedCount = 0;
+    let dedupedCount = 0;
+    let sentCount = 0;
+    let autoRenewedCount = 0;
 
-    const normalizedNotificationHours = Array.isArray(config.NOTIFICATION_HOURS)
-      ? config.NOTIFICATION_HOURS.map(h => String(h).padStart(2, '0'))
-      : [];
-    const currentHour = String(getTimezoneDateParts(currentTime, timezone).hour).padStart(2, '0');
-    const shouldNotifyThisHour =
-      normalizedNotificationHours.includes('*') ||
-      normalizedNotificationHours.includes('ALL') ||
-      normalizedNotificationHours.includes(currentHour) ||
-      normalizedNotificationHours.length === 0;
+    // 不在通知时段：不发送但仍跑自动续订（业务上希望续订总能发生）
+    /** @type {Array<{ sub: any, rule: any, daysDiff: number, hoursDiff: number }>} */
+    const candidates = [];
 
-    const status = {
-      lastRunAt: new Date().toISOString(),
-      timezone,
-      currentHour,
-      configuredHours: normalizedNotificationHours,
-      shouldNotifyThisHour,
-      checkedSubscriptions: Array.isArray(subscriptions) ? subscriptions.length : 0,
-      activeSubscriptions: 0,
-      expiringMatched: 0,
-      dedupeSkipped: 0,
-      updatedSubscriptions: 0,
-      sent: false,
-      sendResult: null,
-      reason: ''
-    };
+    /** @type {Array<any>} */
+    const updatedSubsToSave = [];
 
     for (const subscription of subscriptions) {
       if (!subscription.isActive) continue;
-      status.activeSubscriptions += 1;
+      activeCount++;
 
-      const reminderSetting = { unit: subscription.reminderUnit || 'day', value: subscription.reminderValue ?? 7 };
+      // 计算到期天数（按用户 TZ）
       let expiryDate = new Date(subscription.expiryDate);
-      let daysDiff = Math.ceil((expiryDate.getTime() - todayMidnight) / MS_PER_DAY);
-      let diffMs = expiryDate.getTime() - currentTime.getTime();
-      let diffHours = diffMs / MS_PER_HOUR;
+      let daysDiff = getDaysBetween(now.utc, expiryDate, timezone);
+      let hoursDiff = (expiryDate.getTime() - now.utc.getTime()) / MS_PER_HOUR;
 
+      // 自动续订：已过期 + autoRenew=true → 推进到期日并写支付记录
       if (subscription.autoRenew && daysDiff < 0) {
-        const mode = subscription.subscriptionMode || 'cycle';
-        let periodsAdded = 0;
-
-        if (subscription.useLunar) {
-          let lunar = lunarCalendar.solar2lunar(expiryDate.getFullYear(), expiryDate.getMonth() + 1, expiryDate.getDate());
-          while (expiryDate <= currentTime) {
-            lunar = lunarBiz.addLunarPeriod(lunar, subscription.periodValue, subscription.periodUnit);
-            const solar = lunarBiz.lunar2solar(lunar);
-            expiryDate = new Date(solar.year, solar.month - 1, solar.day);
-            periodsAdded++;
-          }
-        } else {
-          while (expiryDate <= currentTime) {
-            if (mode === 'reset') {
-              expiryDate = new Date(currentTime);
-            }
-            if (subscription.periodUnit === 'day') {
-              expiryDate.setDate(expiryDate.getDate() + subscription.periodValue);
-            } else if (subscription.periodUnit === 'month') {
-              expiryDate.setMonth(expiryDate.getMonth() + subscription.periodValue);
-            } else if (subscription.periodUnit === 'year') {
-              expiryDate.setFullYear(expiryDate.getFullYear() + subscription.periodValue);
-            }
-            periodsAdded++;
-          }
+        const renewed = autoRenew(subscription, now.utc, timezone, config);
+        if (renewed) {
+          updatedSubsToSave.push(renewed.next);
+          autoRenewedCount++;
+          // 续订后重算 diff
+          expiryDate = new Date(renewed.next.expiryDate);
+          daysDiff = getDaysBetween(now.utc, expiryDate, timezone);
+          hoursDiff = (expiryDate.getTime() - now.utc.getTime()) / MS_PER_HOUR;
+          // 用续订后的对象作后续判断
+          subscription.expiryDate = renewed.next.expiryDate;
+          subscription.startDate = renewed.next.startDate;
+          subscription.lastPaymentDate = renewed.next.lastPaymentDate;
+          subscription.paymentHistory = renewed.next.paymentHistory;
         }
+      }
 
-        const newStartDate = mode === 'reset' ? new Date(currentTime) : new Date(subscription.expiryDate);
-        const newExpiryDate = expiryDate;
-        const paymentRecord = {
-          id: Date.now().toString(),
-          date: currentTime.toISOString(),
-          amount: subscription.amount || 0,
-          type: 'auto',
-          note: `自动续订 (${mode === 'reset' ? '重置模式' : '接续模式'}${periodsAdded > 1 ? ', 补齐' + periodsAdded + '周期' : ''})`,
-          periodStart: newStartDate.toISOString(),
-          periodEnd: newExpiryDate.toISOString()
-        };
+      // 加载规则；老订阅没有规则时，用 legacyFieldToRule 现场转一条
+      let rules = await remindersRepo.listForSubscription(env, subscription.id);
+      if (rules.length === 0) {
+        rules = [remindersRepo.legacyFieldToRule(subscription)];
+      }
 
-        const paymentHistory = subscription.paymentHistory || [];
-        paymentHistory.push(paymentRecord);
-        const paymentHistoryLimit = Number(config.PAYMENT_HISTORY_LIMIT) || 100;
-        const trimmedPaymentHistory = paymentHistory.length > paymentHistoryLimit
-          ? paymentHistory.slice(-paymentHistoryLimit)
-          : paymentHistory;
+      for (const rule of rules) {
+        const decision = shouldFire(rule, { daysDiff, hoursDiff, nowIso: now.utc.toISOString() });
+        if (!decision.fire) continue;
+        matchedCount++;
+        candidates.push({ sub: subscription, rule, daysDiff, hoursDiff });
+      }
+    }
 
-        const updatedSubscription = {
-          ...subscription,
-          startDate: newStartDate.toISOString(),
-          expiryDate: newExpiryDate.toISOString(),
-          lastPaymentDate: currentTime.toISOString(),
-          paymentHistory: trimmedPaymentHistory
-        };
+    // 持久化自动续订结果
+    if (updatedSubsToSave.length > 0) {
+      await subRepo.saveMany(env, updatedSubsToSave);
+      console.log(`[定时任务] 已自动续订 ${updatedSubsToSave.length} 个订阅`);
+    }
 
-        updatedSubscriptions.push(updatedSubscription);
-        hasUpdates = true;
+    // 不在通知时段 → 写日志后返回
+    if (!inWindow) {
+      const entry = await schedulerLogsRepo.writeLog(env, {
+        startedAt: startedAtIso,
+        finishedAt: new Date().toISOString(),
+        timezone,
+        currentHour: now.hourString,
+        configuredHours: normalizedHours,
+        inWindow: false,
+        checkedCount: activeCount,
+        matchedCount,
+        dedupedCount: 0,
+        sentCount: 0,
+        autoRenewedCount,
+        status: 'skipped',
+        reason: `当前用户 TZ 小时 ${now.hourString} 不在配置时段 [${normalizedHours.join(',') || '空'}] 内`
+      });
+      return entry;
+    }
 
-        diffMs = newExpiryDate.getTime() - currentTime.getTime();
-        diffHours = diffMs / MS_PER_HOUR;
-        daysDiff = Math.ceil((newExpiryDate.getTime() - todayMidnight) / MS_PER_DAY);
-        const shouldRemindAfterRenewal = shouldTriggerReminder(reminderSetting, daysDiff, diffHours);
-        if (shouldRemindAfterRenewal) {
-          expiringSubscriptions.push({
-            ...updatedSubscription,
-            daysRemaining: daysDiff,
-            hoursRemaining: Math.round(diffHours)
-          });
-        }
+    // 在时段：去重 + 发送
+    /** @type {Array<{ sub: any, rule: any, daysDiff: number, hoursDiff: number }>} */
+    const ready = [];
+    const ymdhLocal = `${now.parts.year}${String(now.parts.month).padStart(2, '0')}${String(
+      now.parts.day
+    ).padStart(2, '0')}${now.hourString}`;
+    for (const c of candidates) {
+      const dedupeKey = `notify_dedupe:${c.sub.id}:${c.rule.id}:${ymdhLocal}`;
+      const exists = await env.SUBSCRIPTIONS_KV.get(dedupeKey);
+      if (exists) {
+        dedupedCount++;
         continue;
       }
-
-      const shouldRemind = shouldTriggerReminder(reminderSetting, daysDiff, diffHours);
-      if (daysDiff < 0 && subscription.autoRenew === false) {
-        expiringSubscriptions.push({
-          ...subscription,
-          daysRemaining: daysDiff,
-          hoursRemaining: Math.round(diffHours)
-        });
-      } else if (shouldRemind) {
-        expiringSubscriptions.push({
-          ...subscription,
-          daysRemaining: daysDiff,
-          hoursRemaining: Math.round(diffHours)
-        });
-      }
+      await env.SUBSCRIPTIONS_KV.put(dedupeKey, '1', { expirationTtl: DEDUPE_TTL_SEC });
+      ready.push(c);
     }
 
-    if (hasUpdates) {
-      // v3：仅保存被更新的订阅，无需重写整个数组
-      await subRepo.saveMany(env, updatedSubscriptions);
-      console.log(`[定时任务] 已更新 ${updatedSubscriptions.length} 个自动续费订阅`);
+    if (ready.length === 0) {
+      const entry = await schedulerLogsRepo.writeLog(env, {
+        startedAt: startedAtIso,
+        finishedAt: new Date().toISOString(),
+        timezone,
+        currentHour: now.hourString,
+        configuredHours: normalizedHours,
+        inWindow: true,
+        checkedCount: activeCount,
+        matchedCount,
+        dedupedCount,
+        sentCount: 0,
+        autoRenewedCount,
+        status: matchedCount > 0 ? 'skipped' : 'ok',
+        reason:
+          matchedCount > 0
+            ? `命中 ${matchedCount} 条规则但全部在去重窗口内（跳过 ${dedupedCount}）`
+            : '本次未命中任何提醒规则'
+      });
+      return entry;
     }
 
-    status.updatedSubscriptions = updatedSubscriptions.length;
-    status.expiringMatched = expiringSubscriptions.length;
+    // 排序：按剩余天数升序，更紧迫的在前
+    ready.sort((a, b) => a.daysDiff - b.daysDiff);
 
-    if (expiringSubscriptions.length > 0) {
-      if (!shouldNotifyThisHour) {
-        status.sent = false;
-        status.reason = `当前小时 ${currentHour} 未在通知时段内 (${normalizedNotificationHours.join(',') || '空'})`;
-        console.log(`[定时任务] ${status.reason}，跳过发送`);
-      } else {
-        expiringSubscriptions.sort((a, b) => a.daysRemaining - b.daysRemaining);
-        const bucketKey = `${new Date().toISOString().slice(0, 13)}`;
-        const dedupeResult = await dedupeNotifications(env, expiringSubscriptions, bucketKey);
-        status.dedupeSkipped = dedupeResult.skipped;
+    // 当前 v3 仍按"一次性聚合所有订阅成一条通知"的方式发送（v2 行为兼容）
+    // notify_log 按 (subId, ruleId, channel) 维度落，仍可细粒度查询
+    const enrichedSubs = ready.map((c) => ({
+      ...c.sub,
+      daysRemaining: c.daysDiff,
+      hoursRemaining: Math.round(c.hoursDiff)
+    }));
+    const content = formatNotificationContent(enrichedSubs, config);
+    const title = '订阅到期/续费提醒';
 
-        if (dedupeResult.deduped.length === 0) {
-          status.sent = false;
-          status.reason = `命中 ${expiringSubscriptions.length} 条，但全部在去重窗口内（跳过 ${dedupeResult.skipped} 条）`;
-          console.log(`[定时任务] ${status.reason}`);
-        } else {
-          console.log(`[定时任务] 发送 ${dedupeResult.deduped.length} 条提醒通知（去重跳过 ${dedupeResult.skipped} 条）`);
-          const commonContent = formatNotificationContent(dedupeResult.deduped, config);
-          const sendResult = await sendNotificationToAllChannels('订阅到期/续费提醒', commonContent, config, '[定时任务]');
-          status.sent = true;
-          status.sendResult = sendResult;
-          status.reason = sendResult && sendResult.attempted > 0
-            ? `已尝试发送到 ${sendResult.attempted} 个渠道，成功 ${sendResult.successCount} 个（去重跳过 ${dedupeResult.skipped} 条）`
-            : '未启用任何通知渠道';
+    // 给 dispatch 提供主 subId+ruleId（聚合通知用第一条做归属）
+    const primary = ready[0];
+    const dispatchResult = await dispatch(
+      { title, content },
+      config,
+      {
+        env,
+        subId: primary.sub.id,
+        ruleId: primary.rule.id,
+        logPrefix: '[定时任务]',
+        metadata: {
+          tags: enrichedSubs.map((s) => s.name),
+          daysRemaining: primary.daysDiff,
+          ruleType: primary.rule.type,
+          ruleValue: primary.rule.value
         }
       }
-    } else {
-      status.sent = false;
-      status.reason = '本次未命中需要提醒的订阅';
-    }
+    );
+    sentCount = dispatchResult.successCount;
 
-    await saveSchedulerStatus(env, status);
+    const entry = await schedulerLogsRepo.writeLog(env, {
+      startedAt: startedAtIso,
+      finishedAt: new Date().toISOString(),
+      timezone,
+      currentHour: now.hourString,
+      configuredHours: normalizedHours,
+      inWindow: true,
+      checkedCount: activeCount,
+      matchedCount,
+      dedupedCount,
+      sentCount,
+      autoRenewedCount,
+      status: dispatchResult.failedCount > 0 && sentCount === 0 ? 'error' : 'ok',
+      reason:
+        dispatchResult.attempted > 0
+          ? `发送到 ${dispatchResult.attempted} 个渠道，成功 ${dispatchResult.successCount} / 失败 ${dispatchResult.failedCount}`
+          : '未启用任何通知渠道',
+      extra: {
+        candidates: ready.map((c) => ({
+          subId: c.sub.id,
+          subName: c.sub.name,
+          ruleId: c.rule.id,
+          ruleType: c.rule.type,
+          ruleValue: c.rule.value,
+          daysDiff: c.daysDiff
+        })),
+        channelResults: dispatchResult.channelResults
+      }
+    });
+    return entry;
   } catch (error) {
     console.error('[定时任务] 执行失败:', error);
-    await saveSchedulerStatus(env, {
-      lastRunAt: new Date().toISOString(),
-      sent: false,
+    return schedulerLogsRepo.writeLog(env, {
+      startedAt: startedAtIso,
+      finishedAt: new Date().toISOString(),
+      timezone: 'UTC',
+      currentHour: '00',
+      configuredHours: [],
+      inWindow: false,
+      checkedCount: 0,
+      matchedCount: 0,
+      dedupedCount: 0,
+      sentCount: 0,
+      autoRenewedCount: 0,
+      status: 'error',
       reason: '执行异常: ' + (error && error.message ? error.message : String(error)),
-      errorStack: error && error.stack ? error.stack : undefined
+      extra: { stack: error && error.stack }
     });
   }
 }
 
-export { checkExpiringSubscriptions };
+/**
+ * 自动续订：把已过期的订阅按周期推进，生成 auto 类型支付记录。
+ *
+ * 与 v2 行为一致：cycle / reset 模式 + 公历 / 农历分支。
+ *
+ * @param {any} sub
+ * @param {Date} now UTC 时刻
+ * @param {string} timezone
+ * @param {any} config
+ * @returns {{ next: any } | null}
+ */
+function autoRenew(sub, now, timezone, config) {
+  const mode = sub.subscriptionMode || 'cycle';
+  let expiryDate = new Date(sub.expiryDate);
+  let periodsAdded = 0;
+
+  if (sub.useLunar) {
+    let lunar = lunarCalendar.solar2lunar(
+      expiryDate.getFullYear(),
+      expiryDate.getMonth() + 1,
+      expiryDate.getDate()
+    );
+    while (expiryDate <= now) {
+      lunar = lunarBiz.addLunarPeriod(lunar, sub.periodValue, sub.periodUnit);
+      const solar = lunarBiz.lunar2solar(lunar);
+      expiryDate = new Date(solar.year, solar.month - 1, solar.day);
+      periodsAdded++;
+      if (periodsAdded > 60) break; // 防御
+    }
+  } else {
+    while (expiryDate <= now) {
+      if (mode === 'reset') expiryDate = new Date(now);
+      if (sub.periodUnit === 'day') expiryDate.setDate(expiryDate.getDate() + sub.periodValue);
+      else if (sub.periodUnit === 'month') expiryDate.setMonth(expiryDate.getMonth() + sub.periodValue);
+      else if (sub.periodUnit === 'year') expiryDate.setFullYear(expiryDate.getFullYear() + sub.periodValue);
+      periodsAdded++;
+      if (periodsAdded > 120) break;
+    }
+  }
+
+  if (periodsAdded === 0) return null;
+
+  const newStartDate = mode === 'reset' ? new Date(now) : new Date(sub.expiryDate);
+  const newExpiryDate = expiryDate;
+  void timezone;
+
+  const paymentRecord = {
+    id: Date.now().toString(),
+    date: now.toISOString(),
+    amount: sub.amount || 0,
+    type: 'auto',
+    note: `自动续订 (${mode === 'reset' ? '重置模式' : '接续模式'}${
+      periodsAdded > 1 ? ', 补齐' + periodsAdded + '周期' : ''
+    })`,
+    periodStart: newStartDate.toISOString(),
+    periodEnd: newExpiryDate.toISOString()
+  };
+
+  const paymentHistoryLimit = Number(config.PAYMENT_HISTORY_LIMIT) || 100;
+  const ph = [...(sub.paymentHistory || []), paymentRecord];
+  const trimmed = ph.length > paymentHistoryLimit ? ph.slice(-paymentHistoryLimit) : ph;
+
+  return {
+    next: {
+      ...sub,
+      startDate: newStartDate.toISOString(),
+      expiryDate: newExpiryDate.toISOString(),
+      lastPaymentDate: now.toISOString(),
+      paymentHistory: trimmed
+    }
+  };
+}
