@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>通知历史 - SubsTracker</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+  ${themeResources}
+  <style>
+    .row-success { background-color: #f0fdf4; }
+    .row-failed  { background-color: #fef2f2; }
+    html.dark .row-success { background-color: rgba(34,197,94,0.08) !important; }
+    html.dark .row-failed  { background-color: rgba(239,68,68,0.08) !important; }
+    .raw-pre { white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow: auto; }
+  </style>
+</head>
+<body class="bg-gray-100">
+  <!-- 顶部导航（与其他页一致的最简版本，避免重复导出大头） -->
+  <nav class="bg-white shadow">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+      <div class="flex items-center space-x-2">
+        <i class="fas fa-history text-indigo-600"></i>
+        <span class="font-bold text-gray-800">通知历史</span>
+        <span class="text-xs text-gray-500 ml-2">v3 · 帮你自助排查"为什么没收到通知"</span>
+      </div>
+      <div class="flex items-center space-x-3 text-sm">
+        <a href="/admin" class="text-gray-600 hover:text-indigo-600"><i class="fas fa-list"></i> 订阅</a>
+        <a href="/admin/dashboard" class="text-gray-600 hover:text-indigo-600"><i class="fas fa-tachometer-alt"></i> 仪表盘</a>
+        <a href="/admin/config" class="text-gray-600 hover:text-indigo-600"><i class="fas fa-cog"></i> 配置</a>
+        <a href="/api/logout" class="text-red-500 hover:text-red-700"><i class="fas fa-sign-out-alt"></i> 退出</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-7xl mx-auto p-4">
+    <!-- 筛选栏 -->
+    <div class="bg-white rounded-lg shadow p-4 mb-4">
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">订阅 ID</label>
+          <input id="filterSubId" type="text" placeholder="不填=全部"
+            class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">渠道</label>
+          <select id="filterChannel" class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white">
+            <option value="">全部</option>
+            <option value="telegram">Telegram</option>
+            <option value="notifyx">NotifyX</option>
+            <option value="webhook">Webhook</option>
+            <option value="wechatbot">企业微信</option>
+            <option value="email">邮件</option>
+            <option value="bark">Bark</option>
+            <option value="gotify">Gotify</option>
+            <option value="serverchan">Server酱</option>
+            <option value="pushplus">PushPlus</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">状态</label>
+          <select id="filterStatus" class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white">
+            <option value="">全部</option>
+            <option value="success">成功</option>
+            <option value="failed">失败</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-600 mb-1">最近多少小时</label>
+          <select id="filterSince" class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white">
+            <option value="24">24 小时</option>
+            <option value="72" selected>3 天</option>
+            <option value="168">7 天</option>
+            <option value="720">30 天</option>
+            <option value="">不限</option>
+          </select>
+        </div>
+        <div class="flex items-end space-x-2">
+          <button id="reloadBtn" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-3 py-1.5 rounded">
+            <i class="fas fa-sync"></i> 刷新
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 概览卡片 -->
+    <div id="summary" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      <div class="bg-white p-3 rounded-lg shadow text-center">
+        <div class="text-xs text-gray-500">总记录</div>
+        <div id="metricTotal" class="text-2xl font-bold text-gray-800">-</div>
+      </div>
+      <div class="bg-white p-3 rounded-lg shadow text-center">
+        <div class="text-xs text-gray-500">成功</div>
+        <div id="metricSuccess" class="text-2xl font-bold text-green-600">-</div>
+      </div>
+      <div class="bg-white p-3 rounded-lg shadow text-center">
+        <div class="text-xs text-gray-500">失败</div>
+        <div id="metricFailed" class="text-2xl font-bold text-red-600">-</div>
+      </div>
+      <div class="bg-white p-3 rounded-lg shadow text-center">
+        <div class="text-xs text-gray-500">最近一次发送</div>
+        <div id="metricLatest" class="text-sm font-semibold text-gray-700 mt-1">-</div>
+      </div>
+    </div>
+
+    <!-- 调度日志快速预览 -->
+    <details class="bg-white rounded-lg shadow mb-4 p-3">
+      <summary class="cursor-pointer text-sm font-medium text-gray-700">
+        <i class="fas fa-clock"></i> 最近 10 次调度执行
+      </summary>
+      <div id="schedLogs" class="mt-3 space-y-1 text-xs"></div>
+    </details>
+
+    <!-- 主表格 -->
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">时间</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">订阅</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">规则</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">渠道</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">状态</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 uppercase">详情</th>
+            </tr>
+          </thead>
+          <tbody id="logsBody" class="divide-y divide-gray-200 bg-white">
+            <tr><td colspan="6" class="px-3 py-8 text-center text-gray-400">加载中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script src="/js/lib/api-client.js"></script>
+  <script>
+    /**
+     * 通知历史页脚本（v3）
+     *
+     * 数据源：
+     *   GET /api/notification-logs?subId=&channel=&status=&since=&limit=
+     *   GET /api/scheduler-logs?limit=10
+     *   GET /api/config （取 TIMEZONE 用于本地时间显示）
+     *   GET /api/subscriptions （映射 subId → 订阅名）
+     */
+    let userTz = 'UTC';
+    let subNameMap = {};
+
+    function fmtTime(iso) {
+      try {
+        return new Date(iso).toLocaleString('zh-CN', { timeZone: userTz });
+      } catch {
+        return iso;
+      }
+    }
+
+    function ruleLabel(ruleId) {
+      // 暂未关联规则元数据，只显示简化 id（前 8 位）
+      if (!ruleId || ruleId === 'none' || ruleId === 'null') return '<span class="text-gray-400">手动/默认</span>';
+      return '<span class="text-xs font-mono bg-gray-100 px-1 rounded">' + ruleId.slice(0, 8) + '</span>';
+    }
+
+    function statusBadge(s) {
+      if (s === 'success') return '<span class="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs">成功</span>';
+      if (s === 'failed')  return '<span class="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs">失败</span>';
+      return '<span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 text-xs">' + s + '</span>';
+    }
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function buildDetail(log) {
+      const parts = [];
+      if (log.title) parts.push('<div><b>标题：</b>' + escapeHtml(log.title) + '</div>');
+      if (log.error) parts.push('<div class="text-red-600 mt-1"><b>错误：</b>' + escapeHtml(log.error) + '</div>');
+      if (log.raw) {
+        const raw = typeof log.raw === 'string' ? log.raw : JSON.stringify(log.raw, null, 2);
+        parts.push('<details class="mt-1"><summary class="cursor-pointer text-xs text-gray-500">原始返回</summary><pre class="raw-pre text-xs bg-gray-50 p-2 mt-1 rounded">' + escapeHtml(raw) + '</pre></details>');
+      }
+      if (log.content) {
+        const trimmed = String(log.content).slice(0, 200) + (log.content.length > 200 ? '…' : '');
+        parts.push('<details class="mt-1"><summary class="cursor-pointer text-xs text-gray-500">通知正文（前 200 字）</summary><pre class="raw-pre text-xs bg-gray-50 p-2 mt-1 rounded">' + escapeHtml(trimmed) + '</pre></details>');
+      }
+      return parts.length ? parts.join('') : '<span class="text-gray-400">无</span>';
+    }
+
+    async function loadConfig() {
+      try {
+        const res = await fetch('/api/config', { credentials: 'same-origin' });
+        const cfg = await res.json();
+        if (cfg && cfg.TIMEZONE) userTz = cfg.TIMEZONE;
+      } catch (e) { /* ignore */ }
+    }
+
+    async function loadSubs() {
+      try {
+        const res = await fetch('/api/subscriptions', { credentials: 'same-origin' });
+        const list = await res.json();
+        if (Array.isArray(list)) {
+          for (const s of list) subNameMap[s.id] = s.name;
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    async function loadSchedLogs() {
+      const target = document.getElementById('schedLogs');
+      target.innerHTML = '<div class="text-gray-400">加载中…</div>';
+      try {
+        const data = await ApiClient.get('/api/scheduler-logs', { limit: 10 });
+        const logs = (data && data.logs) || [];
+        if (logs.length === 0) {
+          target.innerHTML = '<div class="text-gray-400">暂无调度记录</div>';
+          return;
+        }
+        target.innerHTML = logs.map(l => {
+          const color = l.status === 'ok' ? 'text-green-600' : (l.status === 'skipped' ? 'text-yellow-600' : 'text-red-600');
+          return '<div class="flex flex-wrap items-center gap-3 border-b py-1.5">'
+            + '<span class="text-gray-500 text-xs">' + fmtTime(l.startedAt) + '</span>'
+            + '<span class="' + color + '">' + l.status + '</span>'
+            + '<span>' + l.timezone + ' / hour=' + l.currentHour + ' / inWindow=' + (l.inWindow ? '是' : '否') + '</span>'
+            + '<span>命中 ' + l.matchedCount + ' / 去重 ' + l.dedupedCount + ' / 发送 ' + l.sentCount + ' / 续订 ' + l.autoRenewedCount + '</span>'
+            + (l.reason ? '<span class="text-gray-500 text-xs">' + escapeHtml(l.reason) + '</span>' : '')
+            + '</div>';
+        }).join('');
+      } catch (err) {
+        target.innerHTML = '<div class="text-red-500">加载失败：' + escapeHtml(err.message) + '</div>';
+      }
+    }
+
+    async function loadLogs() {
+      const subId = document.getElementById('filterSubId').value.trim();
+      const channel = document.getElementById('filterChannel').value;
+      const status = document.getElementById('filterStatus').value;
+      const sinceHours = document.getElementById('filterSince').value;
+      const params = { limit: 200 };
+      if (subId) params.subId = subId;
+      if (channel) params.channel = channel;
+      if (status) params.status = status;
+      if (sinceHours) {
+        const since = new Date(Date.now() - Number(sinceHours) * 3600 * 1000).toISOString();
+        params.since = since;
+      }
+
+      const tbody = document.getElementById('logsBody');
+      tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-8 text-center text-gray-400">加载中…</td></tr>';
+      try {
+        const data = await ApiClient.get('/api/notification-logs', params);
+        const logs = (data && data.logs) || [];
+
+        // 概览
+        document.getElementById('metricTotal').textContent = logs.length;
+        document.getElementById('metricSuccess').textContent = logs.filter(l => l.status === 'success').length;
+        document.getElementById('metricFailed').textContent = logs.filter(l => l.status === 'failed').length;
+        document.getElementById('metricLatest').textContent = logs.length ? fmtTime(logs[0].timestamp) : '-';
+
+        if (logs.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-8 text-center text-gray-400">没有匹配的记录</td></tr>';
+          return;
+        }
+        tbody.innerHTML = logs.map(l => {
+          const subName = subNameMap[l.subId] || l.subId;
+          const rowClass = l.status === 'failed' ? 'row-failed' : 'row-success';
+          return '<tr class="' + rowClass + '">'
+            + '<td class="px-3 py-2 align-top whitespace-nowrap">' + escapeHtml(fmtTime(l.timestamp)) + '</td>'
+            + '<td class="px-3 py-2 align-top">' + escapeHtml(subName) + '</td>'
+            + '<td class="px-3 py-2 align-top">' + ruleLabel(l.ruleId) + '</td>'
+            + '<td class="px-3 py-2 align-top">' + escapeHtml(l.channel) + '</td>'
+            + '<td class="px-3 py-2 align-top">' + statusBadge(l.status) + '</td>'
+            + '<td class="px-3 py-2 align-top text-xs">' + buildDetail(l) + '</td>'
+            + '</tr>';
+        }).join('');
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-8 text-center text-red-500">加载失败：' + escapeHtml(err.message) + '</td></tr>';
+      }
+    }
+
+    document.getElementById('reloadBtn').addEventListener('click', loadLogs);
+    ['filterSubId','filterChannel','filterStatus','filterSince'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('change', loadLogs);
+    });
+
+    (async function init() {
+      await Promise.all([loadConfig(), loadSubs()]);
+      await Promise.all([loadLogs(), loadSchedLogs()]);
+    })();
+  </script>
+</body>
+</html>
