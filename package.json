@@ -1,6 +1,6 @@
 {
   "name": "subscription-manager",
-  "version": "3.0.0-alpha.1",
+  "version": "3.0.0",
   "description": "订阅管理系统 v3 - 基于 Cloudflare Workers + Hono",
   "main": "src/index.js",
   "type": "module",
