@@ -7,7 +7,6 @@
  * - api/handlers/test-notification.js（手动测试单个渠道）
  * - api/handlers/notify.js（第三方 /api/notify/{token}）
  *
- * 维护人：v3 重构 (2026-05)
  */
 
 import { telegramChannel } from './telegram.js';

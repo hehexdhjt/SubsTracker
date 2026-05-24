@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 调度器 v3 集成测试
+ * 调度器集成测试
  *
  * 4 个核心场景（修复 #91 / #52 / #166）：
  * 1. UTC 0点 + TZ Asia/Shanghai + NOTIFICATION_HOURS=["08"] + 北京 8 点 → 应发送
@@ -48,7 +48,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('scheduler v3 - 时区 + 通知时段', () => {
+describe('调度器 - 时区 + 通知时段', () => {
   it('场景1：UTC 0点 + TZ Asia/Shanghai + NOTIFICATION_HOURS=[08] + 北京 8 点 → 发送', async () => {
     // mock 当前时间为 UTC 2026-05-24 00:00 = 北京 5/24 08:00
     vi.useFakeTimers();
@@ -224,7 +224,7 @@ describe('scheduler v3 - 时区 + 通知时段', () => {
   });
 });
 
-describe('scheduler v3 - 自动续订', () => {
+describe('调度器 - 自动续订', () => {
   it('已过期 + autoRenew=true → 推进到期日 + 写 auto 支付记录', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-05-24T00:00:00.000Z'));
@@ -259,7 +259,7 @@ describe('scheduler v3 - 自动续订', () => {
   });
 });
 
-describe('scheduler v3 - 写入日志', () => {
+describe('调度器 - 写入日志', () => {
   it('每次执行都写一条 sched_log', async () => {
     await setConfig({
       JWT_SECRET: 's',

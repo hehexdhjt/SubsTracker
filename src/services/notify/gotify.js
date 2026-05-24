@@ -51,7 +51,7 @@ export const gotifyChannel = {
   }
 };
 
-/** @deprecated v2 兼容 */
+/** @deprecated 旧版兼容函数 */
 export async function sendGotifyNotification(title, content, config) {
   const r = await gotifyChannel.send({ title, content }, config);
   if (!r.success) console.error('[Gotify]', r.error);

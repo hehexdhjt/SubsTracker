@@ -11,7 +11,7 @@ name = "subscription-manager-staging"
 
 # KV 命名空间配置（默认模板不预设固定 ID，运行 npm run setup 自动生成）
 
-# 静态资源（v3 起新增）：托管 public/ 目录下的 JS/CSS/HTML 给浏览器
+# 静态资源：托管 public/ 目录下的 JS/CSS/HTML 给浏览器
 # 使用方式：浏览器访问 /js/lib/api-client.js 等同于 public/js/lib/api-client.js
 # 不命中静态资源的请求由 Worker fetch handler 处理（默认行为）
 [assets]

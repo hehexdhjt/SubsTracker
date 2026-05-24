@@ -1,5 +1,5 @@
 /**
- * 简易 API 客户端（v3）
+ * 简易 API 客户端
  *
  * 用法（浏览器全局）：
  *   <script src="/js/lib/api-client.js"></script>

@@ -1,13 +1,12 @@
 // 注：dashboard 业务逻辑较多，此处不启用 // @ts-check（依赖外部 currency 模块的复杂返回类型）
 /**
- * 仪表盘统计 handler（v3）
+ * 仪表盘统计 handler
  *
  * 改动：
  * - 用户时区从 config.TIMEZONE 读取（不再硬编码 'UTC'）
  * - schedulerStatus / schedulerStatusHistory 从新的 scheduler-logs.repo 取
- *   v2 的 'scheduler_status' / 'scheduler_status_history' 已废弃（迁移会清掉）
+ *   旧 'scheduler_status' / 'scheduler_status_history' 已废弃（迁移会清掉）
  *
- * 维护人：v3 重构 (2026-05)
  */
 import { getAllSubscriptions } from '../../data/subscriptions.js';
 import {
@@ -27,7 +26,7 @@ async function handleDashboardStats(env, config) {
     const subscriptions = await getAllSubscriptions(env);
     const timezone = (config && config.TIMEZONE) || 'UTC';
 
-    /** v3：从结构化日志库读最新调度状态 */
+    /** 本次：从结构化日志库读最新调度状态 */
     let schedulerStatus = null;
     let schedulerStatusHistory = [];
     try {
@@ -90,7 +89,7 @@ async function handleDashboardStats(env, config) {
           expenseByCategory,
           schedulerStatus,
           schedulerStatusHistory,
-          /** v3 新增：用户时区（前端可据此显示） */
+          /** 新增：用户时区（前端可据此显示） */
           timezone
         }
       }),

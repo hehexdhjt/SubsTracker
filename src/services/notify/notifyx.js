@@ -47,9 +47,9 @@ export const notifyxChannel = {
   }
 };
 
-/** @deprecated v2 兼容函数 */
+/** @deprecated 旧版兼容函数 */
 export async function sendNotifyXNotification(title, content, _description, config) {
-  // v2 接口签名带一个 description 参数；新接口已弃用此字段
+  // 早期接口签名带一个 description 参数；新接口已弃用此字段
   void _description;
   const r = await notifyxChannel.send({ title, content }, config);
   if (!r.success) console.error('[NotifyX]', r.error);

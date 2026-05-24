@@ -1,4 +1,4 @@
-# 本地开发专用配置（v3）
+# 本地开发专用配置
 #
 # 用法：npx wrangler dev --config wrangler.dev.toml
 #

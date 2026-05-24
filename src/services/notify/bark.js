@@ -70,7 +70,7 @@ export const barkChannel = {
   }
 };
 
-/** @deprecated v2 兼容 */
+/** @deprecated 旧版兼容函数 */
 export async function sendBarkNotification(title, content, config) {
   const r = await barkChannel.send({ title, content }, config);
   if (!r.success) console.error('[Bark]', r.error);

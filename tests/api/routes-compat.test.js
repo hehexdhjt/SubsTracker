@@ -2,10 +2,10 @@
 /**
  * API 路由兼容性 smoke 测试
  *
- * 验证 Hono 应用对 v2 路由表的 1:1 兼容：
+ * 验证 Hono 应用与既有客户端的路由响应严格兼容：
  * - 未授权时返回 401 + 同样的错误结构
  * - 公开端点（登录页、登录接口）行为一致
- * - 已知 4xx/5xx 错误格式与 v2 一致
+ * - 4xx/5xx 错误格式与既有约定一致
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 // @ts-ignore

@@ -1,12 +1,12 @@
 // 注：本文件暂不启用 // @ts-check，因 lunar 库返回类型分支较多，类型清理推迟到后续 Task。
 /**
- * 定时任务调度器（v3 重写）
+ * 定时任务调度器
  *
  * ── 修复的核心问题（#91 / #52 / #166 根因）─────────────────
- * v2 调度器把"当前 UTC 时刻的小时"当作"用户本地小时"来对比 NOTIFICATION_HOURS，
+ * 旧调度器把"当前 UTC 时刻的小时"当作"用户本地小时"来对比 NOTIFICATION_HOURS，
  * 配合"通知时段语义不一致"的文档表述，造成大量"不响 / 错时响"。
  *
- * v3 修复：
+ * 修复：
  * 1. 统一时区基准：通过 getNowInTimezone(config.TIMEZONE) 取用户 TZ 下的 hourString
  *    与 NOTIFICATION_HOURS（按用户 TZ 解释）比对，语义清晰。
  * 2. 多提醒规则：从 reminders.repo 加载每个订阅的规则数组，逐条调
@@ -26,7 +26,6 @@
  *       - shouldFire? → dedupe → dispatch.send → notify_log
  *     → sched_log
  *
- * 维护人：v3 重构 (2026-05)
  */
 
 import { getConfig } from '../data/config.js';
@@ -199,7 +198,7 @@ export async function checkExpiringSubscriptions(env) {
     // 排序：按剩余天数升序，更紧迫的在前
     ready.sort((a, b) => a.daysDiff - b.daysDiff);
 
-    // 当前 v3 仍按"一次性聚合所有订阅成一条通知"的方式发送（v2 行为兼容）
+    // 一次性聚合所有订阅成一条通知（与既有渠道契约一致）
     // notify_log 按 (subId, ruleId, channel) 维度落，仍可细粒度查询
     const enrichedSubs = ready.map((c) => ({
       ...c.sub,
@@ -283,7 +282,7 @@ export async function checkExpiringSubscriptions(env) {
 /**
  * 自动续订：把已过期的订阅按周期推进，生成 auto 类型支付记录。
  *
- * 与 v2 行为一致：cycle / reset 模式 + 公历 / 农历分支。
+ * 按"cycle / reset 模式 + 公历 / 农历分支。
  *
  * @param {any} sub
  * @param {Date} now UTC 时刻

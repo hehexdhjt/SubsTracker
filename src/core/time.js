@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 时区核心模块（v3 重写）
+ * 时区核心模块
  *
  * ── 设计原则 ────────────────────────────────────────────────
  * 1. 数据存储层：所有日期一律 ISO 8601 UTC 字符串（如 "2026-05-24T17:30:00.000Z"）
@@ -8,7 +8,7 @@
  *    年/月/日/时；本模块是这层的"唯一真相源"
  * 3. 展示层：所有面向用户的日期显示都走 formatLocalDate / formatTimezoneDisplay
  *
- * ── 关键修复点（对比 v2）─────────────────────────────────────
+ * ── 关键设计 ────────────────────────────────────────────
  * - 旧 getCurrentTimeInTimezone() 只 `return new Date()`，把"当前 UTC 时刻"
  *   伪装成"用户本地时间"对象返回；调用方把它当作时区相关 Date 用，导致
  *   严重误用（#52 / #91 / #166）。本版本改为：
@@ -19,7 +19,6 @@
  *   修复"凌晨 0–8 点创建订阅默认日期变前一天"的 #166
  * - 所有公开函数 JSDoc 标注 + 中文用途说明，从此可被 // @ts-check 守护
  *
- * 维护人：v3 重构 (2026-05)
  */
 
 /** 一小时的毫秒数 */
@@ -297,7 +296,7 @@ export function formatLocalDate(time, timezone = 'UTC', format = 'full') {
 }
 
 /**
- * 同 formatLocalDate，保留原 v2 命名以兼容老调用方。
+ * 同 formatLocalDate，保留原命名以兼容老调用方。
  *
  * @param {Date | string | number} time
  * @param {string} [timezone='UTC']
@@ -388,7 +387,7 @@ export function formatBeijingTime(date = new Date(), format = 'full') {
 /**
  * 从请求中推断时区：query > Header > Accept-Language。
  *
- * 注意：v3 起前端展示用的是 config.TIMEZONE（用户配置的时区），
+ * 注意：本版本前端展示用的是 config.TIMEZONE（用户配置的时区），
  * 此函数主要用于 API 兼容场景。
  *
  * @param {Request} request

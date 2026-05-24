@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * v3 新增 API 路由
+ * 提醒规则 / 通知日志 / 调度日志 路由
  *
  * 接口表（路径前缀 /api）：
  *   GET    /subscriptions/:id/reminders           列出某订阅的提醒规则
@@ -12,10 +12,9 @@
  *                                                 查询通知日志
  *   GET    /scheduler-logs?limit=N                查询调度执行日志
  *
- * 鉴权：与 v2 一致——需要登录（cookie token），由 v2 的 router.js 在 routes 之前
+ * 鉴权：与既有客户端约定一致——需要登录（cookie token），由 router.js 在 routes 之前
  * 统一校验。本文件被 router.js 调用，不再单独校验。
  *
- * 维护人：v3 重构 (2026-05)
  */
 
 import * as remindersRepo from '../../data/reminders.repo.js';
@@ -31,14 +30,14 @@ function json(data, status = 200) {
 }
 
 /**
- * 处理提醒规则 / 通知日志 / 调度日志相关的 v3 新 API。
+ * 处理提醒规则 / 通知日志 / 调度日志相关的 新 API。
  * 返回 null 表示路径不匹配，由调用方继续转给下一组路由。
  *
  * @param {Request} request
  * @param {{ SUBSCRIPTIONS_KV: KVNamespace }} env
  * @param {string} path 已剥离 /api 前缀的路径
  */
-export async function handleV3Routes(request, env, path) {
+export async function handleExtraRoutes(request, env, path) {
   const method = request.method;
 
   // /subscriptions/:id/reminders[/:ruleId]

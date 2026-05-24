@@ -50,7 +50,7 @@ export const pushplusChannel = {
   }
 };
 
-/** @deprecated v2 兼容 */
+/** @deprecated 旧版兼容函数 */
 export async function sendPushPlusNotification(title, content, config) {
   const r = await pushplusChannel.send({ title, content }, config);
   if (!r.success) console.error('[PushPlus]', r.error);

@@ -18,7 +18,7 @@ import {
   _getCachedSchemaVersion
 } from '../../src/data/migrate.js';
 
-/** 把 KV 清空（仅遍历常见 v2/v3 键 prefix） */
+/** 把 KV 清空（仅遍历常见 KV key 前缀） */
 async function clearKv() {
   // KV.list 在 vitest-pool-workers 是真实实现
   const list = await env.SUBSCRIPTIONS_KV.list();
@@ -191,7 +191,7 @@ describe('migrate.ensureMigrations（编排器）', () => {
     expect(parsed[0].value).toBe(5);
   });
 
-  it('schema_version=v3 → 跳过，命中缓存', async () => {
+  it('schema_version 已就位 → 跳过，命中缓存', async () => {
     await env.SUBSCRIPTIONS_KV.put('schema_version', SCHEMA_VERSION);
 
     const r1 = await ensureMigrations(env);
@@ -210,7 +210,7 @@ describe('migrate.ensureMigrations（编排器）', () => {
     await ensureMigrations(env);
     _resetMigrationCache();
 
-    // 第二次：schema_version 已是 v3，应直接跳过
+    // 第二次：schema_version 已就位，应直接跳过
     const r2 = await ensureMigrations(env);
     expect(r2.migrated).toBe(false);
     expect(r2.reason).toBe('already_v3');

@@ -1,11 +1,10 @@
 // @ts-check
 /**
- * 通知调度入口（v3）
+ * 通知调度入口
  *
- * v2 的 sendNotificationToAllChannels 现在是 dispatch.dispatch 的薄壳，
+ * 旧 sendNotificationToAllChannels 现在是 dispatch.dispatch 的薄壳，
  * 保留签名向后兼容。新代码请直接使用 dispatch / testChannel。
  *
- * 维护人：v3 重构 (2026-05)
  */
 import { dispatch } from './dispatch.js';
 
@@ -35,7 +34,7 @@ export async function sendNotificationToAllChannels(
     }
   );
 
-  // v2 调用方期望的字段名
+  // 旧调用方期望的字段名
   return {
     attempted: result.attempted,
     successCount: result.successCount,

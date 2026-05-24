@@ -1,6 +1,6 @@
-# SubsTracker v3 架构文档
+# 架构文档
 
-本文档描述 v3 重构后的代码结构、关键模块与数据流。供贡献者上手与作者后续维护参考。
+本文档描述系统的代码结构、关键模块与数据流。供贡献者上手与作者后续维护参考。
 
 ---
 
@@ -32,28 +32,28 @@ src/
 ├── app.js                         # Hono 应用装配（中间件 + 路由）
 │
 ├── core/                          # 与平台无关的纯逻辑
-│   ├── time.js                    # 时区单一真相源 ★
+│   ├── time.js                    # 时区单一真相源
 │   ├── lunar.js                   # 农历转换（1900-2100）
 │   ├── currency.js                # 汇率系统 + 财务计算
-│   ├── currency-format.js         # 货币显示统一工具 ★
+│   ├── currency-format.js         # 货币显示统一工具
 │   └── auth.js                    # JWT (Web Crypto HS256)
 │
 ├── data/                          # KV 存储抽象
 │   ├── kv.js                      # JSON 读写封装
 │   ├── config.js                  # 系统配置读写 + 默认值
-│   ├── subscriptions.repo.js      # sub:{id} + sub_index ★
-│   ├── reminders.repo.js          # reminder_rules:{subId} ★
-│   ├── notification-logs.repo.js  # notify_log:{...} (TTL 30天) ★
-│   ├── scheduler-logs.repo.js     # sched_log:{iso} (TTL 30天) ★
-│   ├── subscriptions.js           # 业务层（原 v2 文件 thin-wrap repo）
-│   └── migrate.js                 # 自动迁移编排 ★
+│   ├── subscriptions.repo.js      # sub:{id} + sub_index
+│   ├── reminders.repo.js          # reminder_rules:{subId}
+│   ├── notification-logs.repo.js  # notify_log:{...} (TTL 30天)
+│   ├── scheduler-logs.repo.js     # sched_log:{iso} (TTL 30天)
+│   ├── subscriptions.js           # 业务层（thin wrap repo）
+│   └── migrate.js                 # 自动迁移编排
 │
 ├── services/
-│   ├── scheduler.js               # 定时任务（v3 重写）★
+│   ├── scheduler.js               # 定时任务
 │   └── notify/
-│       ├── channel.js             # 通知渠道适配器接口 ★
-│       ├── dispatch.js            # 多渠道并发调度 + 写日志 ★
-│       ├── reminder-engine.js     # 规则触发引擎（纯函数） ★
+│       ├── channel.js             # 通知渠道适配器接口
+│       ├── dispatch.js            # 多渠道并发调度 + 写日志
+│       ├── reminder-engine.js     # 规则触发引擎（纯函数）
 │       ├── reminder.js            # 通知正文格式化 + legacy 转换
 │       └── {telegram,bark,webhook,email,wechat,gotify,
 │             serverchan,pushplus,notifyx}.js
@@ -70,18 +70,18 @@ src/
 │       ├── notify.js              # POST /api/notify/:token (第三方)
 │       ├── subscriptions.js       # 订阅 CRUD + 续订 + 支付
 │       ├── test-notification.js   # 配置页"测试发送"
-│       └── v3-routes.js           # 提醒规则 / 通知日志 / 调度日志 ★
+│       └── extras.js              # 提醒规则 / 通知日志 / 调度日志
 │
 └── views/
     ├── pages.js                   # SSR 页面拼接（注入主题资源）
     ├── theme-resources.html/js    # 暗色模式 + 按钮样式
     ├── loginPage.html
-    ├── adminPage.html             # 订阅列表 + 表单 + 多规则编辑器 ★
-    ├── configPage.html            # 系统配置 + TZ 感知预览 ★
+    ├── adminPage.html             # 订阅列表 + 表单 + 多规则编辑器
+    ├── configPage.html            # 系统配置 + TZ 感知预览
     ├── dashboardPage.html         # 仪表盘
-    └── notifyLogsPage.html        # /admin/notify-logs ★
+    └── notifyLogsPage.html        # /admin/notify-logs
 
-public/                            # Workers Assets 静态资源（v3 新）
+public/                            # Workers Assets 静态资源
 ├── README.md
 └── js/lib/api-client.js           # 浏览器侧 fetch 封装
 
@@ -92,21 +92,19 @@ tests/
 ├── data/reminders.test.js         # 13 测试
 ├── data/notification-logs.test.js # 8 测试
 ├── data/scheduler-logs.test.js    # 4 测试
-├── services/scheduler.test.js     # 7 集成测试
+├── services/scheduler.test.js     # 8 集成测试
 ├── services/notify/channels.test.js     # 34 测试
 ├── services/notify/reminder-engine.test.js # 24 测试
 ├── api/routes-compat.test.js      # 8 测试
-└── api/v3-routes.test.js          # 12 测试
+└── api/extras-routes.test.js          # 12 测试（提醒/日志路由）
 ```
-
-★ 标记的是 v3 新增 / 重写的关键模块。
 
 ---
 
 ## 3. KV Key 布局
 
 ```
-schema_version           = "v3"
+schema_version           = "v3"     ← 数据 schema 版本标识（兼容性需要，不可改）
 config                   = { ...所有配置 }
 
 # 订阅
@@ -132,15 +130,17 @@ migration_lock                                          TTL 60秒
 # 杂项
 SYSTEM_EXCHANGE_RATES                                  TTL 24小时
 login_attempts:{ip}                                    TTL 5分钟
-subscriptions_v2_backup（v2 老 Key 迁移备份）           TTL 7天
+subscriptions_v2_backup（旧 Key 迁移备份）              TTL 7天
 ```
+
+> 凡是带 `_v2` / `_v3` 后缀的字符串都是 **持久化的 schema 标识**，与"产品版本号"无关，不可重命名。
 
 ---
 
 ## 4. 时区统一模型
 
 ```
-真相源：config.TIMEZONE（如 "Asia/Shanghai"）
+真相源：config.TIMEZONE（默认 "Asia/Shanghai"）
 
   ┌──────────────────────────────────────────────────────────┐
   │  数据存储层： 所有日期一律 ISO 8601 UTC 字符串              │
@@ -162,7 +162,7 @@ subscriptions_v2_backup（v2 老 Key 迁移备份）           TTL 7天
 |------|------|
 | `getNowInTimezone(tz, now?)` | 返回 `{ utc, parts, hourString, isoLocal, timezone }` |
 | `getTimezoneHourString(date, tz)` | "00"–"23" 字符串，调度器对比通知时段 |
-| `getDaysBetween(from, to, tz)` | 跨用户 TZ 零点的整天数差（修复 #166） |
+| `getDaysBetween(from, to, tz)` | 跨用户 TZ 零点的整天数差 |
 | `getTimezoneMidnightTimestamp(date, tz)` | 用户 TZ 当天零点的 UTC ms |
 | `formatLocalDate(time, tz, fmt)` | 按 TZ 展示（'date' / 'datetime' / 'isoLocal'） |
 | `formatTimezoneDisplay(tz)` | "中国标准时间 (UTC+8)" 风格文本 |
@@ -251,13 +251,13 @@ checkExpiringSubscriptions:
 
 | 测试文件 | 关键场景 |
 |----------|----------|
-| `core/time.test.js` | UTC/北京/纽约 DST、跨日界、#166 边界、非法 TZ 兜底 |
+| `core/time.test.js` | UTC/北京/纽约 DST、跨日界、非法 TZ 兜底 |
 | `data/migrate.test.js` | 迁移幂等、并发触发、损坏 JSON 兜底、3 个 step 全跑 |
-| `services/notify/channels.test.js` | Telegram MarkdownV2 转义（修 #81）+ 9 渠道成功/失败、dispatch 部分失败 |
+| `services/notify/channels.test.js` | Telegram MarkdownV2 转义 + 9 渠道成功/失败、dispatch 部分失败 |
 | `services/notify/reminder-engine.test.js` | 24 表驱动用例：days/hours value 边界 + after_expiry 重复间隔 |
-| `services/scheduler.test.js` | UTC 0点 + 北京 8点 应发 / 配[00] 不发 / 4规则精确命中 / 同小时去重 |
-| `api/routes-compat.test.js` | Hono 路由与 v2 输出严格 1:1 |
-| `api/v3-routes.test.js` | 提醒规则 CRUD / preset / 通知日志查询 / 创建订阅自动应用规则 |
+| `services/scheduler.test.js` | UTC 0点 + 北京 8点 应发 / 配[00] 不发 / 4规则精确命中 / 同小时去重 / 通配符 `*` |
+| `api/routes-compat.test.js` | Hono 路由响应严格兼容既有客户端 |
+| `api/extras-routes.test.js` | 提醒规则 CRUD / preset / 通知日志查询 / 创建订阅自动应用规则 |
 
 ---
 

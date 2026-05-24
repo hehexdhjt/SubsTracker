@@ -15,7 +15,6 @@
  *   （renewed/acknowledged/never）。本引擎不关心终止判断（由 scheduler 在加载规则前过滤），
  *   但会校验"距上次触发是否超过 repeatInterval"。
  *
- * 维护人：v3 重构 (2026-05)
  */
 
 /**

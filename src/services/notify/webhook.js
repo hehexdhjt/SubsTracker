@@ -65,7 +65,7 @@ function buildTemplateData(payload, config) {
     timestamp,
     formattedMessage,
     message: formattedMessage,
-    // v3 新增字段，便于规则化模板
+    // 扩展字段，便于规则化模板
     daysRemaining: payload.metadata?.daysRemaining ?? '',
     ruleType: payload.metadata?.ruleType ?? '',
     ruleValue: payload.metadata?.ruleValue ?? ''
@@ -130,7 +130,7 @@ export const webhookChannel = {
   }
 };
 
-/** @deprecated v2 兼容 */
+/** @deprecated 旧版兼容函数 */
 export async function sendWebhookNotification(title, content, config, metadata = {}) {
   const r = await webhookChannel.send({ title, content, metadata }, config);
   if (!r.success) console.error('[Webhook]', r.error);

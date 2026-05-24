@@ -1,11 +1,10 @@
 // @ts-check
 /**
- * Worker 入口（v3）
+ * Worker 入口
  *
  * fetch handler 委托给 Hono 应用（src/app.js）。
  * scheduled handler 触发定时任务执行。
  *
- * 维护人：v3 重构 (2026-05)
  */
 
 import app from './app.js';

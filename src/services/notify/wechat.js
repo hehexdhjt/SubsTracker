@@ -73,7 +73,7 @@ export const wecomChannel = {
   }
 };
 
-/** @deprecated v2 兼容 */
+/** @deprecated 旧版兼容函数 */
 export async function sendWechatBotNotification(title, content, config) {
   const r = await wecomChannel.send({ title, content }, config);
   if (!r.success) console.error('[企业微信]', r.error);

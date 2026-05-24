@@ -665,12 +665,12 @@
           </div>
         </div>
 
-        <!-- v3：提醒规则编辑器（多条规则）。隐藏的 reminderUnit/reminderValue 仅作为后端兜底字段保留。 -->
+        <!-- 提醒规则编辑器（多条规则）。隐藏的 reminderUnit/reminderValue 仅作为后端兜底字段保留。 -->
         <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
           <div class="flex items-center justify-between mb-3">
             <label class="block text-sm font-semibold text-gray-700">
               <i class="fas fa-bell text-indigo-500 mr-1"></i> 提醒规则
-              <span class="text-xs font-normal text-gray-500 ml-2">（v3 支持多条规则；新订阅自动应用智能预设）</span>
+              <span class="text-xs font-normal text-gray-500 ml-2">（支持多条规则；新订阅自动应用智能预设）</span>
             </label>
             <div class="flex items-center space-x-2">
               <button type="button" id="reminderRulesPresetBtn"
@@ -689,7 +689,7 @@
           <p class="mt-2 text-xs text-gray-500">
             类型说明：到期前 N 天/小时 触发；到期当天；到期后每 X 小时重复（直到续费/手动确认）。
           </p>
-          <!-- 兜底字段：v2 调度器路径需要这两个值；当 reminderRules 为空时仍生效 -->
+          <!-- 兜底字段：旧调度器路径需要这两个值；当 reminderRules 为空时仍生效 -->
           <input type="hidden" id="reminderUnit" value="day">
           <input type="hidden" id="reminderValue" value="7">
           <div class="error-message text-red-500" data-for="reminderValue"></div>
@@ -1158,7 +1158,7 @@ const lunarBiz = {
       }
 
       const reminderValueField = document.getElementById('reminderValue');
-      // v3：reminderValue 已隐藏，规则编辑器替代；保留兜底校验防止脏数据
+      // 本次：reminderValue 已隐藏，规则编辑器替代；保留兜底校验防止脏数据
       if (reminderValueField && reminderValueField.value !== '' && Number(reminderValueField.value) < 0) {
         showFieldError('reminderValue', '提醒值不能为负数');
         isValid = false;
@@ -3425,7 +3425,7 @@ const lunarBiz = {
     }
 
     // ───────────────────────────────────────────────────────
-    // v3：多提醒规则编辑器（内嵌在订阅表单中）
+    // 多提醒规则编辑器（内嵌在订阅表单中）
     //   - 数据形态：[{ id, type, value, unit, repeatInterval?, repeatUntil?, isEnabled }]
     //   - 新建订阅时默认渲染 4 条预设（7/3/1/0 天）
     //   - 编辑订阅时通过 /api/subscriptions/:id/reminders 拉取
@@ -3644,7 +3644,7 @@ const lunarBiz = {
                 body: JSON.stringify({ rules: rulesNow })
               }).catch(err => console.warn('[reminders] 同步规则失败:', err));
             } else if (init && init.method && String(init.method).toUpperCase() === 'POST') {
-              // POST 由后端在创建时一并应用 reminderRules（见 v3-routes），这里清空缓存
+              // POST 由后端在创建时一并应用 reminderRules（见 extras 路由），这里清空缓存
               window.__pendingReminderRules = null;
             }
           } catch (e) { /* ignore */ }

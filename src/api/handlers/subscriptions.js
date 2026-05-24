@@ -96,7 +96,7 @@ async function handleSubscriptions(request, env, path) {
     if (method === 'POST') {
       const subscription = await request.json();
       const result = await createSubscription(subscription, env);
-      // v3：创建成功后写入提醒规则
+      // 本次：创建成功后写入提醒规则
       if (result.success && result.subscription) {
         try {
           const remindersRepo = await import('../../data/reminders.repo.js');

@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * v3 新增 API 路由测试
+ * 提醒规则 / 通知日志 / 调度日志 路由测试
  *
  * - /api/subscriptions/:id/reminders 完整 CRUD
  * - /api/notification-logs 查询 + 过滤

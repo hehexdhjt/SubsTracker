@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * 自动数据迁移（v3）
+ * 自动数据迁移
  *
  * ── 设计原则 ────────────────────────────────────────────────
  * 1. **幂等**：每个 step 多次执行结果一致，且 `migrate:{step.id}=done` 标记跳过。
@@ -8,14 +8,13 @@
  *    最坏情况是其中一方放弃迁移，另一方完成；不会双写。
  * 3. **可累加**：后续 Task 在 `MIGRATION_STEPS` 数组里追加 step，不影响已运行的步骤。
  * 4. **数据安全**：旧 `subscriptions` 单 Key 在迁移成功后改名为
- *    `subscriptions_v2_backup`（7 天 TTL）作回滚备份，不直接删除。
+ *    `subscriptions_v2_backup`（7 天 TTL）保留作回滚备份。
  *
  * ── KV 标记一览 ─────────────────────────────────────────────
- *   schema_version           = 'v3'        ← 总开关，置上后每次请求秒过
+ *   schema_version           = 'v3'        ← 数据 schema 版本标识，置上后每次请求秒过
  *   migrate:subscriptions_v3 = 'done'      ← 每个 step 自己的标记
  *   migration_lock           = ISO 时间戳   ← TTL 60s 的悲观锁
  *
- * 维护人：v3 重构 (2026-05)
  */
 
 import * as subRepo from './subscriptions.repo.js';
@@ -37,7 +36,7 @@ const BACKUP_TTL_SEC = 7 * 24 * 3600;
  * @property {(env: any) => Promise<void>} run 执行体
  */
 
-/** 当前所有 v3 迁移步骤（后续 Task 追加） */
+/** 当前所有 迁移步骤（后续 Task 追加） */
 export const MIGRATION_STEPS = [
   {
     id: 'subscriptions_v3',
@@ -162,7 +161,7 @@ async function releaseLock(env) {
  *
  * - 读 `subscriptions`，逐条写 `sub:{id}`，构建索引并写 `sub_index`
  * - 旧 `subscriptions` 改名为 `subscriptions_v2_backup`（7 天 TTL）后删除
- * - 旧数据为空或缺失：仅写一个空索引，schema_version 仍标 v3
+ * - 旧数据为空或缺失：仅写一个空索引，schema_version 仍写入
  *
  * 幂等性：
  *   - 若 sub_index 已写过且 sub:{id} 已存在，重复执行会覆盖（值相同，影响仅 KV 写次数）
@@ -229,7 +228,7 @@ export async function migrateReminderRules(env) {
 }
 
 /**
- * 迁移：把旧 scheduler_status_history（最近 20 条 v2 调度状态）转写到 sched_log:{iso}。
+ * 迁移：把旧 scheduler_status_history（早期版本最多保留 20 条调度状态）转写到 sched_log:{iso}。
  *
  * 仅作历史记录的最佳努力迁移，结构差异较大，主要保留时间线索。
  * 旧 Key 迁移完保留作回滚备份（让 KV TTL 自然过期清理）。

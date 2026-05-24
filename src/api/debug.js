@@ -4,10 +4,9 @@
  *
  * 用途：
  * - 检查 KV 绑定、配置完整性、JWT 密钥状态
- * - v3 起新增"时区诊断"区块，直观展示 UTC vs 用户 TZ 的当前小时差异
+ * - 新增"时区诊断"区块，直观展示 UTC vs 用户 TZ 的当前小时差异
  *   这是 #91 / #52 / #166 类问题的自助排查入口
  *
- * 维护人：v3 重构 (2026-05)
  */
 import { getConfig } from '../data/config.js';
 import {
@@ -98,7 +97,7 @@ async function handleDebug(request, env) {
   </style>
 </head>
 <body>
-  <h1>系统调试信息（v3）</h1>
+  <h1>系统调试信息</h1>
 
   <div class="info">
     <h3>基本</h3>
@@ -111,7 +110,7 @@ async function handleDebug(request, env) {
   </div>
 
   <div class="info">
-    <h3>时区诊断（v3 通知调度核心信息）</h3>
+    <h3>时区诊断</h3>
     <div class="row"><span class="k">配置的时区</span><span class="v">${esc(debugInfo.timezoneDisplay)}</span></div>
     <div class="row"><span class="k">时区偏移</span><span class="v">UTC${debugInfo.timezoneOffsetHours >= 0 ? '+' : ''}${debugInfo.timezoneOffsetHours} 小时</span></div>
     <div class="row"><span class="k">当前 UTC</span><span class="v">${esc(debugInfo.utcIso)}</span></div>
@@ -124,8 +123,8 @@ async function handleDebug(request, env) {
   <div class="info">
     <h3>提示</h3>
     <p>1. 如果时区诊断中"当前小时"与你预期不符，请检查配置中的 <code>TIMEZONE</code> 是否与你所在地匹配。</p>
-    <p>2. v3 起 <code>NOTIFICATION_HOURS</code> <strong>按你配置的时区</strong>解释（不再是 UTC）。例如想让北京时间 8 点收到通知，<code>TIMEZONE=Asia/Shanghai</code> 时填 <code>08</code>。</p>
-    <p>3. 详细发送记录请前往后台"通知历史"页（v3 后续版本提供）。</p>
+    <p>2. 本版本 <code>NOTIFICATION_HOURS</code> <strong>按你配置的时区</strong>解释（不再是 UTC）。例如想让北京时间 8 点收到通知，<code>TIMEZONE=Asia/Shanghai</code> 时填 <code>08</code>。</p>
+    <p>3. 详细发送记录请前往后台"通知历史"页（后续版本提供）。</p>
     <p>4. <a href="/admin">返回管理后台</a></p>
     <p>5. <a href="/debug?export=sched_logs&limit=50">📥 导出最近 50 条调度执行日志（JSON）</a></p>
   </div>
