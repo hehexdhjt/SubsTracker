@@ -1,5 +1,6 @@
 import { getConfig } from '../data/config.js';
 import { getAllSubscriptions } from '../data/subscriptions.js';
+import * as subRepo from '../data/subscriptions.repo.js';
 import { getCurrentTimeInTimezone, MS_PER_HOUR, MS_PER_DAY, getTimezoneMidnightTimestamp, getTimezoneDateParts } from '../core/time.js';
 import { formatNotificationContent, shouldTriggerReminder } from './notify/reminder.js';
 import { sendNotificationToAllChannels } from './notify/index.js';
@@ -175,11 +176,8 @@ async function checkExpiringSubscriptions(env) {
     }
 
     if (hasUpdates) {
-      const mergedSubscriptions = subscriptions.map(sub => {
-        const updated = updatedSubscriptions.find(u => u.id === sub.id);
-        return updated || sub;
-      });
-      await env.SUBSCRIPTIONS_KV.put('subscriptions', JSON.stringify(mergedSubscriptions));
+      // v3：仅保存被更新的订阅，无需重写整个数组
+      await subRepo.saveMany(env, updatedSubscriptions);
       console.log(`[定时任务] 已更新 ${updatedSubscriptions.length} 个自动续费订阅`);
     }
 

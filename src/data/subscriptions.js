@@ -1,38 +1,78 @@
+// 注：本文件暂不启用 // @ts-check，因 lunar 库返回类型分支较多，类型清理推迟到后续 Task。
+/**
+ * 订阅业务层
+ *
+ * 本文件负责"订阅生命周期"相关的业务规则（创建时自动推算到期日、续订生成支付记录、
+ * 删除支付记录回退周期、农历周期推算、初始支付记录等）。
+ *
+ * v3 重构：
+ * - 数据存储从单 Key 数组改为 sub:{id} 多 Key（见 subscriptions.repo.js）
+ * - 单条读写通过 repo.getById / repo.save，不再加载整个数组，降低并发风险
+ * - 业务逻辑保持兼容，外部 API 签名不变
+ *
+ * 注意：reminderUnit/reminderValue 字段保留兼容，Task 8 会在新 API 引入
+ * 多提醒规则（reminder_rules:{id}），届时 Service 层会同步两边。
+ */
+
 import { getConfig } from './config.js';
 import { getCurrentTimeInTimezone, getTimezoneMidnightTimestamp } from '../core/time.js';
 import { lunarCalendar, lunarBiz } from '../core/lunar.js';
 import { resolveReminderSetting } from '../services/notify/reminder.js';
+import * as subRepo from './subscriptions.repo.js';
 
+/**
+ * 裁剪支付历史，保留 1 条 initial + 最近 N 条其他记录。
+ *
+ * @param {Array} records
+ * @param {number} limit
+ * @returns {Array}
+ */
 function trimPaymentHistory(records = [], limit = 100) {
   const safeLimit = Math.min(1000, Math.max(10, Number(limit) || 100));
   if (!Array.isArray(records)) return [];
   if (records.length <= safeLimit) return records;
 
-  const initialRecords = records.filter(item => item && item.type === 'initial');
-  const otherRecords = records.filter(item => item && item.type !== 'initial');
+  const initialRecords = records.filter((item) => item && item.type === 'initial');
+  const otherRecords = records.filter((item) => item && item.type !== 'initial');
   const keptOther = otherRecords.slice(-(safeLimit - Math.min(initialRecords.length, 1)));
   const keptInitial = initialRecords.length > 0 ? [initialRecords[0]] : [];
   return [...keptInitial, ...keptOther];
 }
 
+/**
+ * 获取所有订阅（从新 repo 读取）。
+ *
+ * @param {any} env
+ * @returns {Promise<Array<any>>}
+ */
 async function getAllSubscriptions(env) {
   try {
-    const data = await env.SUBSCRIPTIONS_KV.get('subscriptions');
-    return data ? JSON.parse(data) : [];
+    return await subRepo.listAll(env);
   } catch (error) {
+    console.error('[subscriptions] 读取列表失败:', error);
     return [];
   }
 }
 
+/**
+ * 按 ID 获取单条订阅。
+ *
+ * @param {string} id
+ * @param {any} env
+ */
 async function getSubscription(id, env) {
-  const subscriptions = await getAllSubscriptions(env);
-  return subscriptions.find(s => s.id === id);
+  return subRepo.getById(env, id);
 }
 
+/**
+ * 创建订阅。
+ *
+ * @param {any} subscription 来自前端的字段集
+ * @param {any} env
+ * @returns {Promise<{success: boolean, message?: string, subscription?: any}>}
+ */
 async function createSubscription(subscription, env) {
   try {
-    const subscriptions = await getAllSubscriptions(env);
-
     if (!subscription.name || !subscription.expiryDate) {
       return { success: false, message: '缺少必填字段' };
     }
@@ -89,42 +129,53 @@ async function createSubscription(subscription, env) {
       reminderDays: reminderSetting.unit === 'day' ? reminderSetting.value : undefined,
       reminderHours: reminderSetting.unit === 'hour' ? reminderSetting.value : undefined,
       notes: subscription.notes || '',
-      amount: subscription.amount !== undefined && subscription.amount !== null ? subscription.amount : null,
+      amount:
+        subscription.amount !== undefined && subscription.amount !== null
+          ? subscription.amount
+          : null,
       currency: subscription.currency || 'CNY',
       lastPaymentDate: initialPaymentDate,
-      paymentHistory: subscription.amount !== undefined && subscription.amount !== null ? [{
-        id: Date.now().toString(),
-        date: initialPaymentDate,
-        amount: subscription.amount,
-        currency: subscription.currency || 'CNY',
-        type: 'initial',
-        note: '初始订阅',
-        periodStart: subscription.startDate || initialPaymentDate,
-        periodEnd: subscription.expiryDate
-      }] : [],
+      paymentHistory:
+        subscription.amount !== undefined && subscription.amount !== null
+          ? [
+              {
+                id: Date.now().toString(),
+                date: initialPaymentDate,
+                amount: subscription.amount,
+                currency: subscription.currency || 'CNY',
+                type: 'initial',
+                note: '初始订阅',
+                periodStart: subscription.startDate || initialPaymentDate,
+                periodEnd: subscription.expiryDate
+              }
+            ]
+          : [],
       isActive: subscription.isActive !== false,
       autoRenew: subscription.autoRenew !== false,
       useLunar: useLunar,
       createdAt: new Date().toISOString()
     };
 
-    subscriptions.push(newSubscription);
-
-    await env.SUBSCRIPTIONS_KV.put('subscriptions', JSON.stringify(subscriptions));
+    await subRepo.save(env, newSubscription);
 
     return { success: true, subscription: newSubscription };
   } catch (error) {
-    console.error("创建订阅异常：", error && error.stack ? error.stack : error);
+    console.error('创建订阅异常：', error && error.stack ? error.stack : error);
     return { success: false, message: error && error.message ? error.message : '创建订阅失败' };
   }
 }
 
+/**
+ * 更新订阅。
+ *
+ * @param {string} id
+ * @param {any} subscription
+ * @param {any} env
+ */
 async function updateSubscription(id, subscription, env) {
   try {
-    const subscriptions = await getAllSubscriptions(env);
-    const index = subscriptions.findIndex(s => s.id === id);
-
-    if (index === -1) {
+    const existing = await subRepo.getById(env, id);
+    if (!existing) {
       return { success: false, message: '订阅不存在' };
     }
 
@@ -169,89 +220,113 @@ async function updateSubscription(id, subscription, env) {
     }
 
     const reminderSource = {
-      reminderUnit: subscription.reminderUnit !== undefined ? subscription.reminderUnit : subscriptions[index].reminderUnit,
-      reminderValue: subscription.reminderValue !== undefined ? subscription.reminderValue : subscriptions[index].reminderValue,
-      reminderHours: subscription.reminderHours !== undefined ? subscription.reminderHours : subscriptions[index].reminderHours,
-      reminderDays: subscription.reminderDays !== undefined ? subscription.reminderDays : subscriptions[index].reminderDays
+      reminderUnit:
+        subscription.reminderUnit !== undefined ? subscription.reminderUnit : existing.reminderUnit,
+      reminderValue:
+        subscription.reminderValue !== undefined ? subscription.reminderValue : existing.reminderValue,
+      reminderHours:
+        subscription.reminderHours !== undefined ? subscription.reminderHours : existing.reminderHours,
+      reminderDays:
+        subscription.reminderDays !== undefined ? subscription.reminderDays : existing.reminderDays
     };
     const reminderSetting = resolveReminderSetting(reminderSource);
 
-    const oldSubscription = subscriptions[index];
-    const newAmount = subscription.amount !== undefined ? subscription.amount : oldSubscription.amount;
+    const newAmount = subscription.amount !== undefined ? subscription.amount : existing.amount;
+    let paymentHistory = existing.paymentHistory || [];
 
-    let paymentHistory = oldSubscription.paymentHistory || [];
-
-    if (newAmount !== oldSubscription.amount || (subscription.currency !== undefined && subscription.currency !== oldSubscription.currency)) {
-      const initialPaymentIndex = paymentHistory.findIndex(p => p.type === 'initial');
+    if (
+      newAmount !== existing.amount ||
+      (subscription.currency !== undefined && subscription.currency !== existing.currency)
+    ) {
+      const initialPaymentIndex = paymentHistory.findIndex((p) => p.type === 'initial');
       if (initialPaymentIndex !== -1) {
         paymentHistory[initialPaymentIndex] = {
           ...paymentHistory[initialPaymentIndex],
           amount: newAmount,
-          currency: subscription.currency || oldSubscription.currency || 'CNY'
+          currency: subscription.currency || existing.currency || 'CNY'
         };
       }
     }
 
-    subscriptions[index] = {
-      ...subscriptions[index],
+    const merged = {
+      ...existing,
       name: subscription.name,
-      subscriptionMode: subscription.subscriptionMode || subscriptions[index].subscriptionMode || 'cycle',
-      customType: subscription.customType || subscriptions[index].customType || '',
-      category: subscription.category !== undefined ? subscription.category.trim() : (subscriptions[index].category || ''),
-      startDate: subscription.startDate || subscriptions[index].startDate,
+      subscriptionMode: subscription.subscriptionMode || existing.subscriptionMode || 'cycle',
+      customType: subscription.customType || existing.customType || '',
+      category:
+        subscription.category !== undefined
+          ? subscription.category.trim()
+          : existing.category || '',
+      startDate: subscription.startDate || existing.startDate,
       expiryDate: subscription.expiryDate,
-      periodValue: subscription.periodValue || subscriptions[index].periodValue || 1,
-      periodUnit: subscription.periodUnit || subscriptions[index].periodUnit || 'month',
+      periodValue: subscription.periodValue || existing.periodValue || 1,
+      periodUnit: subscription.periodUnit || existing.periodUnit || 'month',
       reminderUnit: reminderSetting.unit,
       reminderValue: reminderSetting.value,
       reminderDays: reminderSetting.unit === 'day' ? reminderSetting.value : undefined,
       reminderHours: reminderSetting.unit === 'hour' ? reminderSetting.value : undefined,
       notes: subscription.notes || '',
       amount: newAmount,
-      currency: subscription.currency || subscriptions[index].currency || 'CNY',
-      lastPaymentDate: subscriptions[index].lastPaymentDate || subscriptions[index].startDate || subscriptions[index].createdAt || currentTime.toISOString(),
-      paymentHistory: paymentHistory,
-      isActive: subscription.isActive !== undefined ? subscription.isActive : subscriptions[index].isActive,
-      autoRenew: subscription.autoRenew !== undefined ? subscription.autoRenew : (subscriptions[index].autoRenew !== undefined ? subscriptions[index].autoRenew : true),
+      currency: subscription.currency || existing.currency || 'CNY',
+      lastPaymentDate:
+        existing.lastPaymentDate ||
+        existing.startDate ||
+        existing.createdAt ||
+        currentTime.toISOString(),
+      paymentHistory,
+      isActive: subscription.isActive !== undefined ? subscription.isActive : existing.isActive,
+      autoRenew:
+        subscription.autoRenew !== undefined
+          ? subscription.autoRenew
+          : existing.autoRenew !== undefined
+            ? existing.autoRenew
+            : true,
       useLunar: useLunar,
       updatedAt: new Date().toISOString()
     };
 
-    await env.SUBSCRIPTIONS_KV.put('subscriptions', JSON.stringify(subscriptions));
+    await subRepo.save(env, merged);
 
-    return { success: true, subscription: subscriptions[index] };
+    return { success: true, subscription: merged };
   } catch (error) {
+    console.error('[subscriptions] 更新订阅失败:', error);
     return { success: false, message: '更新订阅失败' };
   }
 }
 
+/**
+ * 删除订阅。
+ *
+ * @param {string} id
+ * @param {any} env
+ */
 async function deleteSubscription(id, env) {
   try {
-    const subscriptions = await getAllSubscriptions(env);
-    const filteredSubscriptions = subscriptions.filter(s => s.id !== id);
-
-    if (filteredSubscriptions.length === subscriptions.length) {
-      return { success: false, message: '订阅不存在' };
-    }
-
-    await env.SUBSCRIPTIONS_KV.put('subscriptions', JSON.stringify(filteredSubscriptions));
-
+    const ok = await subRepo.deleteById(env, id);
+    if (!ok) return { success: false, message: '订阅不存在' };
     return { success: true };
   } catch (error) {
+    console.error('[subscriptions] 删除订阅失败:', error);
     return { success: false, message: '删除订阅失败' };
   }
 }
 
+/**
+ * 手动续订订阅。
+ *
+ * 业务规则保留 v2：
+ * - reset 模式：以支付日期为新开始
+ * - cycle 模式：现到期日 > 支付日 时接续，否则以支付日为新开始
+ * - 农历模式按农历周期推算
+ *
+ * @param {string} id
+ * @param {any} env
+ * @param {{ paymentDate?: string|Date, amount?: number, periodMultiplier?: number, note?: string }} options
+ */
 async function manualRenewSubscription(id, env, options = {}) {
   try {
-    const subscriptions = await getAllSubscriptions(env);
-    const index = subscriptions.findIndex(s => s.id === id);
-
-    if (index === -1) {
-      return { success: false, message: '订阅不存在' };
-    }
-
-    const subscription = subscriptions[index];
+    const subscription = await subRepo.getById(env, id);
+    if (!subscription) return { success: false, message: '订阅不存在' };
 
     if (!subscription.periodValue || !subscription.periodUnit) {
       return { success: false, message: '订阅未设置续订周期' };
@@ -269,16 +344,15 @@ async function manualRenewSubscription(id, env, options = {}) {
     const mode = subscription.subscriptionMode || 'cycle';
 
     let newStartDate;
-    let currentExpiryDate = new Date(subscription.expiryDate);
+    const currentExpiryDate = new Date(subscription.expiryDate);
 
     if (mode === 'reset') {
       newStartDate = new Date(paymentDate);
     } else {
-      if (currentExpiryDate.getTime() > paymentDate.getTime()) {
-        newStartDate = new Date(currentExpiryDate);
-      } else {
-        newStartDate = new Date(paymentDate);
-      }
+      newStartDate =
+        currentExpiryDate.getTime() > paymentDate.getTime()
+          ? new Date(currentExpiryDate)
+          : new Date(paymentDate);
     }
 
     let newExpiryDate;
@@ -289,7 +363,6 @@ async function manualRenewSubscription(id, env, options = {}) {
         day: newStartDate.getDate()
       };
       let lunar = lunarCalendar.solar2lunar(solarStart.year, solarStart.month, solarStart.day);
-
       let nextLunar = lunar;
       for (let i = 0; i < periodMultiplier; i++) {
         nextLunar = lunarBiz.addLunarPeriod(nextLunar, subscription.periodValue, subscription.periodUnit);
@@ -299,7 +372,6 @@ async function manualRenewSubscription(id, env, options = {}) {
     } else {
       newExpiryDate = new Date(newStartDate);
       const totalPeriodValue = subscription.periodValue * periodMultiplier;
-
       if (subscription.periodUnit === 'day') {
         newExpiryDate.setDate(newExpiryDate.getDate() + totalPeriodValue);
       } else if (subscription.periodUnit === 'month') {
@@ -312,20 +384,19 @@ async function manualRenewSubscription(id, env, options = {}) {
     const paymentRecord = {
       id: Date.now().toString(),
       date: paymentDate.toISOString(),
-      amount: amount,
+      amount,
       currency: subscription.currency || 'CNY',
       type: 'manual',
-      note: note,
+      note,
       periodStart: newStartDate.toISOString(),
       periodEnd: newExpiryDate.toISOString()
     };
 
-    const paymentHistoryLimit = (await getConfig(env)).PAYMENT_HISTORY_LIMIT || 100;
-    const paymentHistory = subscription.paymentHistory || [];
-    paymentHistory.push(paymentRecord);
+    const paymentHistoryLimit = config.PAYMENT_HISTORY_LIMIT || 100;
+    const paymentHistory = [...(subscription.paymentHistory || []), paymentRecord];
     const trimmedPaymentHistory = trimPaymentHistory(paymentHistory, paymentHistoryLimit);
 
-    subscriptions[index] = {
+    const updated = {
       ...subscription,
       startDate: newStartDate.toISOString(),
       expiryDate: newExpiryDate.toISOString(),
@@ -333,31 +404,30 @@ async function manualRenewSubscription(id, env, options = {}) {
       paymentHistory: trimmedPaymentHistory
     };
 
-    await env.SUBSCRIPTIONS_KV.put('subscriptions', JSON.stringify(subscriptions));
+    await subRepo.save(env, updated);
 
-    return { success: true, subscription: subscriptions[index], message: '续订成功' };
+    return { success: true, subscription: updated, message: '续订成功' };
   } catch (error) {
     console.error('手动续订失败:', error);
-    return { success: false, message: '续订失败: ' + error.message };
+    return { success: false, message: '续订失败: ' + (error && error.message ? error.message : error) };
   }
 }
 
+/**
+ * 删除一条支付记录（删除时回退到期日）。
+ *
+ * @param {string} subscriptionId
+ * @param {string} paymentId
+ * @param {any} env
+ */
 async function deletePaymentRecord(subscriptionId, paymentId, env) {
   try {
-    const subscriptions = await getAllSubscriptions(env);
-    const index = subscriptions.findIndex(s => s.id === subscriptionId);
+    const subscription = await subRepo.getById(env, subscriptionId);
+    if (!subscription) return { success: false, message: '订阅不存在' };
 
-    if (index === -1) {
-      return { success: false, message: '订阅不存在' };
-    }
-
-    const subscription = subscriptions[index];
     const paymentHistory = subscription.paymentHistory || [];
-    const paymentIndex = paymentHistory.findIndex(p => p.id === paymentId);
-
-    if (paymentIndex === -1) {
-      return { success: false, message: '支付记录不存在' };
-    }
+    const paymentIndex = paymentHistory.findIndex((p) => p.id === paymentId);
+    if (paymentIndex === -1) return { success: false, message: '支付记录不存在' };
 
     const deletedPayment = paymentHistory[paymentIndex];
     paymentHistory.splice(paymentIndex, 1);
@@ -369,100 +439,117 @@ async function deletePaymentRecord(subscriptionId, paymentId, env) {
       const sortedByPeriodEnd = [...paymentHistory].sort((a, b) => {
         const dateA = a.periodEnd ? new Date(a.periodEnd) : new Date(0);
         const dateB = b.periodEnd ? new Date(b.periodEnd) : new Date(0);
-        return dateB - dateA;
+        return Number(dateB) - Number(dateA);
       });
 
       if (sortedByPeriodEnd[0].periodEnd) {
         newExpiryDate = sortedByPeriodEnd[0].periodEnd;
       }
 
-      const sortedByDate = [...paymentHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
+      const sortedByDate = [...paymentHistory].sort(
+        (a, b) => Number(new Date(b.date)) - Number(new Date(a.date))
+      );
       newLastPaymentDate = sortedByDate[0].date;
     } else {
-      if (deletedPayment.periodStart) {
-        newExpiryDate = deletedPayment.periodStart;
-      }
-      newLastPaymentDate = subscription.startDate || subscription.createdAt || subscription.expiryDate;
+      if (deletedPayment.periodStart) newExpiryDate = deletedPayment.periodStart;
+      newLastPaymentDate =
+        subscription.startDate || subscription.createdAt || subscription.expiryDate;
     }
 
-    subscriptions[index] = {
+    const updated = {
       ...subscription,
       expiryDate: newExpiryDate,
       paymentHistory,
       lastPaymentDate: newLastPaymentDate
     };
 
-    await env.SUBSCRIPTIONS_KV.put('subscriptions', JSON.stringify(subscriptions));
+    await subRepo.save(env, updated);
 
-    return { success: true, subscription: subscriptions[index], message: '支付记录已删除' };
+    return { success: true, subscription: updated, message: '支付记录已删除' };
   } catch (error) {
     console.error('删除支付记录失败:', error);
-    return { success: false, message: '删除失败: ' + error.message };
+    return {
+      success: false,
+      message: '删除失败: ' + (error && error.message ? error.message : error)
+    };
   }
 }
 
+/**
+ * 更新支付记录。
+ *
+ * @param {string} subscriptionId
+ * @param {string} paymentId
+ * @param {{ date?: string, amount?: number, currency?: string, note?: string }} paymentData
+ * @param {any} env
+ */
 async function updatePaymentRecord(subscriptionId, paymentId, paymentData, env) {
   try {
-    const subscriptions = await getAllSubscriptions(env);
-    const index = subscriptions.findIndex(s => s.id === subscriptionId);
+    const subscription = await subRepo.getById(env, subscriptionId);
+    if (!subscription) return { success: false, message: '订阅不存在' };
 
-    if (index === -1) {
-      return { success: false, message: '订阅不存在' };
-    }
-
-    const subscription = subscriptions[index];
     const paymentHistory = subscription.paymentHistory || [];
-    const paymentIndex = paymentHistory.findIndex(p => p.id === paymentId);
-
-    if (paymentIndex === -1) {
-      return { success: false, message: '支付记录不存在' };
-    }
+    const paymentIndex = paymentHistory.findIndex((p) => p.id === paymentId);
+    if (paymentIndex === -1) return { success: false, message: '支付记录不存在' };
 
     paymentHistory[paymentIndex] = {
       ...paymentHistory[paymentIndex],
       date: paymentData.date || paymentHistory[paymentIndex].date,
-      amount: paymentData.amount !== undefined ? paymentData.amount : paymentHistory[paymentIndex].amount,
-      currency: paymentData.currency || paymentHistory[paymentIndex].currency || subscription.currency || 'CNY',
+      amount:
+        paymentData.amount !== undefined ? paymentData.amount : paymentHistory[paymentIndex].amount,
+      currency:
+        paymentData.currency ||
+        paymentHistory[paymentIndex].currency ||
+        subscription.currency ||
+        'CNY',
       note: paymentData.note !== undefined ? paymentData.note : paymentHistory[paymentIndex].note
     };
 
-    const sortedPayments = [...paymentHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
+    const sortedPayments = [...paymentHistory].sort(
+      (a, b) => Number(new Date(b.date)) - Number(new Date(a.date))
+    );
     const newLastPaymentDate = sortedPayments[0].date;
 
-    subscriptions[index] = {
+    const updated = {
       ...subscription,
       paymentHistory,
       lastPaymentDate: newLastPaymentDate
     };
 
-    await env.SUBSCRIPTIONS_KV.put('subscriptions', JSON.stringify(subscriptions));
+    await subRepo.save(env, updated);
 
-    return { success: true, subscription: subscriptions[index], message: '支付记录已更新' };
+    return { success: true, subscription: updated, message: '支付记录已更新' };
   } catch (error) {
     console.error('更新支付记录失败:', error);
-    return { success: false, message: '更新失败: ' + error.message };
+    return {
+      success: false,
+      message: '更新失败: ' + (error && error.message ? error.message : error)
+    };
   }
 }
 
+/**
+ * 启用/停用订阅。
+ *
+ * @param {string} id
+ * @param {boolean} isActive
+ * @param {any} env
+ */
 async function toggleSubscriptionStatus(id, isActive, env) {
   try {
-    const subscriptions = await getAllSubscriptions(env);
-    const index = subscriptions.findIndex(s => s.id === id);
+    const existing = await subRepo.getById(env, id);
+    if (!existing) return { success: false, message: '订阅不存在' };
 
-    if (index === -1) {
-      return { success: false, message: '订阅不存在' };
-    }
-
-    subscriptions[index] = {
-      ...subscriptions[index],
-      isActive: isActive,
+    const updated = {
+      ...existing,
+      isActive: !!isActive,
       updatedAt: new Date().toISOString()
     };
+    await subRepo.save(env, updated);
 
-    await env.SUBSCRIPTIONS_KV.put('subscriptions', JSON.stringify(subscriptions));
-
-    return { success: true, subscription: subscriptions[index] };
+    return { success: true, subscription: updated };
   } catch (error) {
+    console.error('[subscriptions] 切换状态失败:', error);
     return { success: false, message: '更新订阅状态失败' };
   }
 }
