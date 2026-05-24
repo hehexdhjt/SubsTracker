@@ -15,6 +15,7 @@ import {
   formatTimezoneDisplay,
   getTimezoneOffset
 } from '../core/time.js';
+import * as schedLogs from '../data/scheduler-logs.repo.js';
 
 /** 简单 HTML 转义，防止配置中的字符串污染页面 */
 function esc(value) {
@@ -32,6 +33,19 @@ function esc(value) {
 async function handleDebug(request, env) {
   try {
     const url = new URL(request.url);
+
+    // 子路由：导出最近 N 条调度日志（JSON）
+    if (url.searchParams.get('export') === 'sched_logs') {
+      const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') || 50)));
+      const logs = await schedLogs.getRecent(env, limit);
+      return new Response(JSON.stringify(logs, null, 2), {
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Disposition': `attachment; filename="scheduler-logs-${Date.now()}.json"`
+        }
+      });
+    }
+
     const config = await getConfig(env);
     const tz = config.TIMEZONE || 'UTC';
     const now = getNowInTimezone(tz);
@@ -113,6 +127,7 @@ async function handleDebug(request, env) {
     <p>2. v3 起 <code>NOTIFICATION_HOURS</code> <strong>按你配置的时区</strong>解释（不再是 UTC）。例如想让北京时间 8 点收到通知，<code>TIMEZONE=Asia/Shanghai</code> 时填 <code>08</code>。</p>
     <p>3. 详细发送记录请前往后台"通知历史"页（v3 后续版本提供）。</p>
     <p>4. <a href="/admin">返回管理后台</a></p>
+    <p>5. <a href="/debug?export=sched_logs&limit=50">📥 导出最近 50 条调度执行日志（JSON）</a></p>
   </div>
 </body>
 </html>`,

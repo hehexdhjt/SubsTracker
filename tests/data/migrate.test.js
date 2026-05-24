@@ -128,20 +128,67 @@ describe('migrate.migrateSubscriptions', () => {
   });
 });
 
+describe('migrate.migrateSchedulerLogs', () => {
+  it('迁移旧 scheduler_status_history 到 sched_log:*', async () => {
+    const v2History = [
+      {
+        lastRunAt: '2026-05-24T10:00:00.000Z',
+        timezone: 'Asia/Shanghai',
+        currentHour: '18',
+        configuredHours: ['08', '18'],
+        shouldNotifyThisHour: true,
+        checkedSubscriptions: 5,
+        expiringMatched: 2,
+        dedupeSkipped: 1,
+        sent: true,
+        updatedSubscriptions: 1,
+        reason: '已尝试发送'
+      },
+      {
+        lastRunAt: '2026-05-24T09:00:00.000Z',
+        timezone: 'Asia/Shanghai',
+        currentHour: '17',
+        configuredHours: ['08', '18'],
+        shouldNotifyThisHour: false,
+        sent: false,
+        reason: '当前小时未在通知时段内'
+      }
+    ];
+    await env.SUBSCRIPTIONS_KV.put('scheduler_status_history', JSON.stringify(v2History));
+
+    const { migrateSchedulerLogs } = await import('../../src/data/migrate.js');
+    await migrateSchedulerLogs(env);
+
+    const list = await env.SUBSCRIPTIONS_KV.list({ prefix: 'sched_log:' });
+    expect(list.keys.length).toBe(2);
+  });
+});
+
 describe('migrate.ensureMigrations（编排器）', () => {
   it('初次执行 → 设置 schema_version 与 step 标记', async () => {
     await env.SUBSCRIPTIONS_KV.put(
       'subscriptions',
-      JSON.stringify([{ id: 'x1', name: 'X' }])
+      JSON.stringify([{ id: 'x1', name: 'X', reminderUnit: 'day', reminderValue: 5 }])
     );
 
     const result = await ensureMigrations(env);
 
     expect(result.migrated).toBe(true);
     expect(result.ranSteps).toContain('subscriptions_v3');
+    expect(result.ranSteps).toContain('reminder_rules_v3');
+    expect(result.ranSteps).toContain('scheduler_logs_v3');
     expect(await env.SUBSCRIPTIONS_KV.get('schema_version')).toBe(SCHEMA_VERSION);
     expect(await env.SUBSCRIPTIONS_KV.get('migrate:subscriptions_v3')).toBe('done');
+    expect(await env.SUBSCRIPTIONS_KV.get('migrate:reminder_rules_v3')).toBe('done');
+    expect(await env.SUBSCRIPTIONS_KV.get('migrate:scheduler_logs_v3')).toBe('done');
     expect(_getCachedSchemaVersion()).toBe(SCHEMA_VERSION);
+
+    // reminder rules 也已生成
+    const rules = await env.SUBSCRIPTIONS_KV.get('reminder_rules:x1');
+    expect(rules).toBeTruthy();
+    const parsed = JSON.parse(/** @type {string} */ (rules));
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].value).toBe(5);
   });
 
   it('schema_version=v3 → 跳过，命中缓存', async () => {

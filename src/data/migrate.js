@@ -19,6 +19,8 @@
  */
 
 import * as subRepo from './subscriptions.repo.js';
+import * as remindersRepo from './reminders.repo.js';
+import * as schedulerLogsRepo from './scheduler-logs.repo.js';
 
 /** 当前 schema 版本字符串 */
 export const SCHEMA_VERSION = 'v3';
@@ -41,6 +43,16 @@ export const MIGRATION_STEPS = [
     id: 'subscriptions_v3',
     description: '把单 Key subscriptions 拆成 sub:{id} + sub_index',
     run: migrateSubscriptions
+  },
+  {
+    id: 'reminder_rules_v3',
+    description: '把订阅自带的 reminderUnit/reminderValue 转成 reminder_rules:{subId}',
+    run: migrateReminderRules
+  },
+  {
+    id: 'scheduler_logs_v3',
+    description: '把旧 scheduler_status_history 合并到 sched_log:{iso}',
+    run: migrateSchedulerLogs
   }
 ];
 
@@ -193,4 +205,73 @@ export async function migrateSubscriptions(env) {
   }
 
   console.log(`[migrate:subscriptions_v3] 已迁移 ${oldSubs.length} 条订阅`);
+}
+
+/**
+ * 迁移：根据每个订阅的 reminderUnit/reminderValue 生成 1 条等价 before_expiry 规则。
+ *
+ * 仅对没有 reminder_rules:{subId} 的订阅写入；如果用户在新版本里已经手动配置过规则，
+ * 不会被覆盖。
+ *
+ * @param {{ SUBSCRIPTIONS_KV: KVNamespace }} env
+ */
+export async function migrateReminderRules(env) {
+  const subs = await subRepo.listAll(env);
+  let count = 0;
+  for (const sub of subs) {
+    const existing = await remindersRepo.listForSubscription(env, sub.id);
+    if (existing.length > 0) continue;
+    const rule = remindersRepo.legacyFieldToRule(sub);
+    await remindersRepo.replaceForSubscription(env, sub.id, [rule]);
+    count++;
+  }
+  console.log(`[migrate:reminder_rules_v3] 已为 ${count} 个订阅生成默认提醒规则`);
+}
+
+/**
+ * 迁移：把旧 scheduler_status_history（最近 20 条 v2 调度状态）转写到 sched_log:{iso}。
+ *
+ * 仅作历史记录的最佳努力迁移，结构差异较大，主要保留时间线索。
+ * 旧 Key 迁移完保留作回滚备份（让 KV TTL 自然过期清理）。
+ *
+ * @param {{ SUBSCRIPTIONS_KV: KVNamespace }} env
+ */
+export async function migrateSchedulerLogs(env) {
+  const histRaw = await env.SUBSCRIPTIONS_KV.get('scheduler_status_history');
+  if (!histRaw) return;
+  /** @type {any[]} */
+  let history = [];
+  try {
+    const parsed = JSON.parse(histRaw);
+    history = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    history = [];
+  }
+
+  let count = 0;
+  for (const item of history) {
+    const startedAt = item.lastRunAt || new Date().toISOString();
+    await schedulerLogsRepo.writeLog(
+      env,
+      {
+        startedAt,
+        finishedAt: startedAt,
+        timezone: item.timezone || 'UTC',
+        currentHour: item.currentHour || '00',
+        configuredHours: Array.isArray(item.configuredHours) ? item.configuredHours : [],
+        inWindow: !!item.shouldNotifyThisHour,
+        checkedCount: item.checkedSubscriptions || 0,
+        matchedCount: item.expiringMatched || 0,
+        dedupedCount: item.dedupeSkipped || 0,
+        sentCount: item.sent ? 1 : 0,
+        autoRenewedCount: item.updatedSubscriptions || 0,
+        status: item.errorStack ? 'error' : item.sent ? 'ok' : 'skipped',
+        reason: item.reason || (item.errorStack ? 'legacy_error' : undefined),
+        extra: { migratedFromV2: true }
+      },
+      { ttlSec: 7 * 24 * 3600 }
+    );
+    count++;
+  }
+  console.log(`[migrate:scheduler_logs_v3] 已迁移 ${count} 条历史调度记录`);
 }
