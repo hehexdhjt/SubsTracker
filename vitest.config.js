@@ -12,15 +12,20 @@
 import { defineWorkersConfig } from '@cloudflare/vitest-pool-workers/config';
 
 export default defineWorkersConfig({
+  // 让 vite 把 .html 当作文本字符串 import（与 wrangler 生产环境的 text loader 行为一致）
+  assetsInclude: ['**/*.html'],
   test: {
     include: ['tests/**/*.test.js'],
     poolOptions: {
       workers: {
-        // 测试环境最小 worker 配置：仅声明 KV 绑定供 repo 单测用
         miniflare: {
           compatibilityDate: '2024-09-23',
           compatibilityFlags: ['nodejs_compat'],
           kvNamespaces: ['SUBSCRIPTIONS_KV']
+        },
+        // 让生产环境用的 .html 文本 import 在测试中也能工作
+        wrangler: {
+          configPath: './wrangler.toml'
         }
       }
     }
