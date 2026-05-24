@@ -100,6 +100,21 @@ async function handleSubscriptions(request, env, path) {
     if (method === 'POST') {
       const subscription = await request.json();
       const result = await createSubscription(subscription, env);
+      // v3：创建成功后写入提醒规则
+      if (result.success && result.subscription) {
+        try {
+          const remindersRepo = await import('../../data/reminders.repo.js');
+          const incoming = Array.isArray(subscription.reminderRules)
+            ? subscription.reminderRules
+            : null;
+          const rules = incoming && incoming.length > 0
+            ? incoming.map(remindersRepo.normalizeRule)
+            : remindersRepo.defaultPresetRules();
+          await remindersRepo.replaceForSubscription(env, result.subscription.id, rules);
+        } catch (err) {
+          console.error('[subscriptions] 写入提醒规则失败（订阅本身已创建）:', err);
+        }
+      }
       return new Response(JSON.stringify(result), {
         status: result.success ? 201 : 400,
         headers: { 'Content-Type': 'application/json' }
