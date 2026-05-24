@@ -1,54 +1,78 @@
-async function sendBarkNotification(title, content, config) {
-  try {
-    if (!config.BARK_DEVICE_KEY && !config.BARK_SERVER) {
-      console.error('[Bark] 通知未配置，缺少设备Key或服务器地址');
-      return false;
+// @ts-check
+/**
+ * Bark 通知渠道（iOS）
+ *
+ * 支持两种 URL 模式：
+ *   1. 标准：BARK_SERVER + BARK_DEVICE_KEY → POST {server}/push
+ *   2. 自定义：BARK_SERVER 路径不为 / → POST {server}（已含 key 的完整 URL）
+ */
+import { ok, fail, errorMessage, stripMarkdown } from './channel.js';
+
+/** @type {import('./channel.js').Channel} */
+export const barkChannel = {
+  name: 'bark',
+
+  validateConfig(config) {
+    if (!config.BARK_SERVER && !config.BARK_DEVICE_KEY) {
+      return { ok: false, error: '缺少 BARK_DEVICE_KEY 或 BARK_SERVER' };
     }
+    return { ok: true };
+  },
+
+  async send(payload, config) {
+    const v = barkChannel.validateConfig(config);
+    if (!v.ok) return fail('bark', v.error || '配置无效');
 
     const serverUrl = (config.BARK_SERVER || 'https://api.day.app').replace(/\/+$/, '');
 
-    // 判断是否为自定义完整 URL（路径中包含设备Key，如 bark-worker 格式）
-    let url;
-    let payload;
-    const parsedPath = new URL(serverUrl).pathname;
-    const isCustomUrl = parsedPath && parsedPath !== '/';
-
-    if (isCustomUrl) {
-      // 自定义服务器：直接 POST 到完整 URL
-      url = serverUrl;
-      payload = { title, body: content };
-      console.log('[Bark] 使用自定义服务器URL发送通知');
-    } else {
-      // 标准 Bark API
-      if (!config.BARK_DEVICE_KEY) {
-        console.error('[Bark] 通知未配置，缺少设备Key');
-        return false;
+    let url, /** @type {Record<string, any>} */ body;
+    try {
+      const parsedPath = new URL(serverUrl).pathname;
+      const isCustomUrl = parsedPath && parsedPath !== '/';
+      if (isCustomUrl) {
+        url = serverUrl;
+        body = { title: payload.title, body: stripMarkdown(payload.content) };
+      } else {
+        if (!config.BARK_DEVICE_KEY) return fail('bark', '标准 Bark API 缺少 BARK_DEVICE_KEY');
+        url = `${serverUrl}/push`;
+        body = {
+          title: payload.title,
+          body: stripMarkdown(payload.content),
+          device_key: config.BARK_DEVICE_KEY
+        };
       }
-      url = serverUrl + '/push';
-      payload = { title, body: content, device_key: config.BARK_DEVICE_KEY };
-      console.log('[Bark] 开始发送通知到设备: ' + config.BARK_DEVICE_KEY);
+    } catch {
+      return fail('bark', `BARK_SERVER 不是合法 URL: ${serverUrl}`);
     }
 
-    if (config.BARK_IS_ARCHIVE === 'true') {
-      payload.isArchive = 1;
+    if (config.BARK_IS_ARCHIVE === 'true') body.isArchive = 1;
+
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        body: JSON.stringify(body)
+      });
+      const result = await r.json().catch(() => ({}));
+      return result && result.code === 200
+        ? ok('bark', result)
+        : fail('bark', `Bark 返回 code=${result?.code}`, result);
+    } catch (err) {
+      return fail('bark', errorMessage(err));
     }
+  },
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    const result = await response.json();
-    console.log('[Bark] 发送结果:', result);
-
-    return result.code === 200;
-  } catch (error) {
-    console.error('[Bark] 发送通知失败:', error);
-    return false;
+  async test(config) {
+    return barkChannel.send(
+      { title: '订阅管理 - 测试通知', content: '这是一条 Bark 测试通知。' },
+      config
+    );
   }
-}
+};
 
-export { sendBarkNotification };
+/** @deprecated v2 兼容 */
+export async function sendBarkNotification(title, content, config) {
+  const r = await barkChannel.send({ title, content }, config);
+  if (!r.success) console.error('[Bark]', r.error);
+  return r.success;
+}

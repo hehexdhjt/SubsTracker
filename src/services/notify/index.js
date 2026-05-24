@@ -1,103 +1,47 @@
-import { sendNotifyXNotification } from './notifyx.js';
-import { sendTelegramNotification } from './telegram.js';
-import { sendWebhookNotification } from './webhook.js';
-import { sendWechatBotNotification } from './wechat.js';
-import { sendEmailNotification } from './email.js';
-import { sendBarkNotification } from './bark.js';
-import { sendGotifyNotification } from './gotify.js';
-import { sendServerChanNotification } from './serverchan.js';
-import { sendPushPlusNotification } from './pushplus.js';
+// @ts-check
+/**
+ * 通知调度入口（v3）
+ *
+ * v2 的 sendNotificationToAllChannels 现在是 dispatch.dispatch 的薄壳，
+ * 保留签名向后兼容。新代码请直接使用 dispatch / testChannel。
+ *
+ * 维护人：v3 重构 (2026-05)
+ */
+import { dispatch } from './dispatch.js';
 
-async function sendNotificationToAllChannels(title, commonContent, config, logPrefix = '[定时任务]', options = {}) {
-  const metadata = options.metadata || {};
-  const enabledNotifiers = Array.isArray(config.ENABLED_NOTIFIERS) ? config.ENABLED_NOTIFIERS : [];
-  const result = {
-    attempted: 0,
-    successCount: 0,
-    failedCount: 0,
-    channelResults: {}
+/**
+ * @param {string} title
+ * @param {string} commonContent
+ * @param {any} config
+ * @param {string} [logPrefix='[定时任务]']
+ * @param {{ env?: any, subId?: string, ruleId?: string, metadata?: Object }} [options]
+ */
+export async function sendNotificationToAllChannels(
+  title,
+  commonContent,
+  config,
+  logPrefix = '[定时任务]',
+  options = {}
+) {
+  const result = await dispatch(
+    { title, content: commonContent },
+    config,
+    {
+      logPrefix,
+      env: options.env,
+      subId: options.subId,
+      ruleId: options.ruleId,
+      metadata: options.metadata
+    }
+  );
+
+  // v2 调用方期望的字段名
+  return {
+    attempted: result.attempted,
+    successCount: result.successCount,
+    failedCount: result.failedCount,
+    channelResults: result.channelResults
   };
-
-  if (enabledNotifiers.length === 0) {
-    console.log(`${logPrefix} 未启用任何通知渠道。`);
-    return result;
-  }
-
-  if (enabledNotifiers.includes('notifyx')) {
-    result.attempted += 1;
-    const notifyxContent = `## ${title}\n\n${commonContent}`;
-    const success = await sendNotifyXNotification(title, notifyxContent, `订阅提醒`, config);
-    result.channelResults.notifyx = success;
-    success ? result.successCount++ : result.failedCount++;
-    console.log(`${logPrefix} 发送NotifyX通知 ${success ? '成功' : '失败'}`);
-  }
-  if (enabledNotifiers.includes('telegram')) {
-    result.attempted += 1;
-    const telegramContent = `*${title}*\n\n${commonContent}`;
-    const success = await sendTelegramNotification(telegramContent, config);
-    result.channelResults.telegram = success;
-    success ? result.successCount++ : result.failedCount++;
-    console.log(`${logPrefix} 发送Telegram通知 ${success ? '成功' : '失败'}`);
-  }
-  if (enabledNotifiers.includes('webhook')) {
-    result.attempted += 1;
-    const webhookContent = commonContent.replace(/(\**|\*|##|#|`)/g, '');
-    const success = await sendWebhookNotification(title, webhookContent, config, metadata);
-    result.channelResults.webhook = success;
-    success ? result.successCount++ : result.failedCount++;
-    console.log(`${logPrefix} 发送Webhook通知 ${success ? '成功' : '失败'}`);
-  }
-  if (enabledNotifiers.includes('wechatbot')) {
-    result.attempted += 1;
-    const wechatbotContent = commonContent.replace(/(\**|\*|##|#|`)/g, '');
-    const success = await sendWechatBotNotification(title, wechatbotContent, config);
-    result.channelResults.wechatbot = success;
-    success ? result.successCount++ : result.failedCount++;
-    console.log(`${logPrefix} 发送企业微信机器人通知 ${success ? '成功' : '失败'}`);
-  }
-  if (enabledNotifiers.includes('email')) {
-    result.attempted += 1;
-    const emailContent = commonContent.replace(/(\**|\*|##|#|`)/g, '');
-    const success = await sendEmailNotification(title, emailContent, config);
-    result.channelResults.email = success;
-    success ? result.successCount++ : result.failedCount++;
-    console.log(`${logPrefix} 发送邮件通知 ${success ? '成功' : '失败'}`);
-  }
-  if (enabledNotifiers.includes('bark')) {
-    result.attempted += 1;
-    const barkContent = commonContent.replace(/(\**|\*|##|#|`)/g, '');
-    const success = await sendBarkNotification(title, barkContent, config);
-    result.channelResults.bark = success;
-    success ? result.successCount++ : result.failedCount++;
-    console.log(`${logPrefix} 发送Bark通知 ${success ? '成功' : '失败'}`);
-  }
-
-  if (enabledNotifiers.includes('gotify')) {
-    result.attempted += 1;
-    const gotifyContent = commonContent.replace(/(\**|\*|##|#|`)/g, '');
-    const success = await sendGotifyNotification(title, gotifyContent, config);
-    result.channelResults.gotify = success;
-    success ? result.successCount++ : result.failedCount++;
-    console.log(`${logPrefix} 发送Gotify通知 ${success ? '成功' : '失败'}`);
-  }
-  if (enabledNotifiers.includes('serverchan')) {
-    result.attempted += 1;
-    const success = await sendServerChanNotification(title, commonContent, config);
-    result.channelResults.serverchan = success;
-    success ? result.successCount++ : result.failedCount++;
-    console.log(`${logPrefix} 发送Server酱通知 ${success ? '成功' : '失败'}`);
-  }
-  if (enabledNotifiers.includes('pushplus')) {
-    result.attempted += 1;
-    const success = await sendPushPlusNotification(title, commonContent, config);
-    result.channelResults.pushplus = success;
-    success ? result.successCount++ : result.failedCount++;
-    console.log(`${logPrefix} 发送PushPlus通知 ${success ? '成功' : '失败'}`);
-  }
-
-  return result;
 }
 
-export {
-  sendNotificationToAllChannels
-};
+export { dispatch, testChannel } from './dispatch.js';

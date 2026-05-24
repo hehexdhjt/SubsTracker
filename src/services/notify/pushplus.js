@@ -1,40 +1,58 @@
-async function sendPushPlusNotification(title, content, config) {
-  try {
-    if (!config.PUSHPLUS_TOKEN) {
-      console.error('[PushPlus] 通知未配置，缺少Token');
-      return false;
-    }
+// @ts-check
+/**
+ * PushPlus 通知渠道
+ */
+import { ok, fail, errorMessage } from './channel.js';
 
-    console.log('[PushPlus] 开始发送通知: ' + title);
+/** @type {import('./channel.js').Channel} */
+export const pushplusChannel = {
+  name: 'pushplus',
 
-    const payload = {
+  validateConfig(config) {
+    if (!config.PUSHPLUS_TOKEN) return { ok: false, error: '缺少 PUSHPLUS_TOKEN' };
+    return { ok: true };
+  },
+
+  async send(payload, config) {
+    const v = pushplusChannel.validateConfig(config);
+    if (!v.ok) return fail('pushplus', v.error || '配置无效');
+
+    /** @type {Record<string, any>} */
+    const body = {
       token: config.PUSHPLUS_TOKEN,
-      title,
-      content: `## ${title}\n\n${content}`,
+      title: payload.title || '订阅提醒',
+      content: `## ${payload.title || '订阅提醒'}\n\n${payload.content || ''}`,
       template: 'markdown'
     };
+    if (config.PUSHPLUS_TOPIC) body.topic = config.PUSHPLUS_TOPIC;
+    if (config.PUSHPLUS_CHANNEL) body.channel = config.PUSHPLUS_CHANNEL;
 
-    if (config.PUSHPLUS_TOPIC) {
-      payload.topic = config.PUSHPLUS_TOPIC;
+    try {
+      const r = await fetch('https://www.pushplus.plus/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const result = await r.json().catch(() => ({}));
+      return result && result.code === 200
+        ? ok('pushplus', result)
+        : fail('pushplus', `PushPlus 返回 code=${result?.code} ${result?.msg || ''}`, result);
+    } catch (err) {
+      return fail('pushplus', errorMessage(err));
     }
+  },
 
-    if (config.PUSHPLUS_CHANNEL) {
-      payload.channel = config.PUSHPLUS_CHANNEL;
-    }
-
-    const response = await fetch('https://www.pushplus.plus/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    const result = await response.json();
-    console.log('[PushPlus] 发送结果:', result);
-    return result.code === 200;
-  } catch (error) {
-    console.error('[PushPlus] 发送通知失败:', error);
-    return false;
+  async test(config) {
+    return pushplusChannel.send(
+      { title: '订阅管理 - 测试通知', content: '这是一条 PushPlus 测试通知。' },
+      config
+    );
   }
-}
+};
 
-export { sendPushPlusNotification };
+/** @deprecated v2 兼容 */
+export async function sendPushPlusNotification(title, content, config) {
+  const r = await pushplusChannel.send({ title, content }, config);
+  if (!r.success) console.error('[PushPlus]', r.error);
+  return r.success;
+}
