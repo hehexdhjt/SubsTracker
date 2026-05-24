@@ -193,6 +193,35 @@ describe('scheduler v3 - 时区 + 通知时段', () => {
 
     expect(fetchSpy).toHaveBeenCalledTimes(1); // 只发了一次
   });
+
+  it('场景5：NOTIFICATION_HOURS=["*"] 通配符不应被 padStart 误处理为 "0*"', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-24T00:00:00.000Z'));
+    await setConfig({
+      JWT_SECRET: 's',
+      TIMEZONE: 'Asia/Shanghai',
+      NOTIFICATION_HOURS: ['*'],
+      ENABLED_NOTIFIERS: ['telegram'],
+      TG_BOT_TOKEN: 'B',
+      TG_CHAT_ID: 'C'
+    });
+    await subRepo.save(env, {
+      id: 's-wc',
+      name: 'WC',
+      isActive: true,
+      autoRenew: false,
+      expiryDate: '2026-05-25T03:00:00.000Z'
+    });
+    await remindersRepo.replaceForSubscription(env, 's-wc', [
+      remindersRepo.normalizeRule({ type: 'before_expiry', value: 1, unit: 'days' })
+    ]);
+
+    mockTelegramOk();
+    const log = await checkExpiringSubscriptions(env);
+    expect(log.inWindow).toBe(true);
+    expect(log.configuredHours).toEqual(['*']);
+    expect(log.sentCount).toBe(1);
+  });
 });
 
 describe('scheduler v3 - 自动续订', () => {

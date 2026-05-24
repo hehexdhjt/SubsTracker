@@ -60,7 +60,15 @@ export async function checkExpiringSubscriptions(env) {
     const now = getNowInTimezone(timezone);
 
     const normalizedHours = Array.isArray(config.NOTIFICATION_HOURS)
-      ? config.NOTIFICATION_HOURS.map((h) => String(h).padStart(2, '0'))
+      ? config.NOTIFICATION_HOURS
+          .map((h) => String(h).trim())
+          .filter((h) => h.length > 0)
+          .map((h) => {
+            const up = h.toUpperCase();
+            if (up === '*' || up === 'ALL') return '*';
+            // 仅对纯数字做两位补齐；'*' 之类通配符保持原样
+            return /^\d+$/.test(h) ? h.padStart(2, '0') : up;
+          })
       : [];
     const inWindow =
       normalizedHours.length === 0 ||
