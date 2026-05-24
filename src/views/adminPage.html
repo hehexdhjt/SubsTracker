@@ -659,30 +659,40 @@
           </div>
         </div>
 
+        <!-- v3：提醒规则编辑器（多条规则）。隐藏的 reminderUnit/reminderValue 仅作为后端兜底字段保留。 -->
+        <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+          <div class="flex items-center justify-between mb-3">
+            <label class="block text-sm font-semibold text-gray-700">
+              <i class="fas fa-bell text-indigo-500 mr-1"></i> 提醒规则
+              <span class="text-xs font-normal text-gray-500 ml-2">（v3 支持多条规则；新订阅自动应用智能预设）</span>
+            </label>
+            <div class="flex items-center space-x-2">
+              <button type="button" id="reminderRulesPresetBtn"
+                class="text-xs px-2 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700">
+                <i class="fas fa-magic"></i> 应用预设(7/3/1/0)
+              </button>
+              <button type="button" id="reminderRulesAddBtn"
+                class="text-xs px-2 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                <i class="fas fa-plus"></i> 添加规则
+              </button>
+            </div>
+          </div>
+          <div id="reminderRulesContainer" class="space-y-2">
+            <!-- 规则行由 JS 注入 -->
+          </div>
+          <p class="mt-2 text-xs text-gray-500">
+            类型说明：到期前 N 天/小时 触发；到期当天；到期后每 X 小时重复（直到续费/手动确认）。
+          </p>
+          <!-- 兜底字段：v2 调度器路径需要这两个值；当 reminderRules 为空时仍生效 -->
+          <input type="hidden" id="reminderUnit" value="day">
+          <input type="hidden" id="reminderValue" value="7">
+          <div class="error-message text-red-500" data-for="reminderValue"></div>
+          <p id="reminderHint" class="hidden"></p>
+        </div>
+
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label for="reminderValue" class="block text-sm font-medium text-gray-700 mb-1">提醒提前量</label>
-              <div class="flex space-x-2">
-                <div class="relative flex-1">
-                  <input type="number" id="reminderValue" min="0" value="7"
-                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white">
-                </div>
-                <div class="w-24 shrink-0">
-                  <select id="reminderUnit"
-                    class="w-full px-2 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white">
-                    <option value="day" selected>天</option>
-                    <option value="hour">小时</option>
-                  </select>
-                </div>
-              </div>
-               <div class="error-message text-red-500" data-for="reminderValue"></div>
-               <p id="reminderHint" class="mt-2 text-xs text-gray-500 leading-tight">
-                 0 = 仅在到期时提醒; 选择"小时"需要将 Worker 定时任务调整为小时级执行
-               </p>
-            </div>
-
-            <div>
-               <label class="block text-sm font-medium text-gray-700 mb-3">选项设置</label>
+              <label class="block text-sm font-medium text-gray-700 mb-3">选项设置</label>
                <div class="flex items-center space-x-6">
                   <label class="inline-flex items-center cursor-pointer select-none group">
                     <input type="checkbox" id="isActive" checked 
@@ -1142,8 +1152,8 @@ const lunarBiz = {
       }
 
       const reminderValueField = document.getElementById('reminderValue');
-      const reminderValue = reminderValueField.value;
-      if (reminderValue === '' || Number(reminderValue) < 0) {
+      // v3：reminderValue 已隐藏，规则编辑器替代；保留兜底校验防止脏数据
+      if (reminderValueField && reminderValueField.value !== '' && Number(reminderValueField.value) < 0) {
         showFieldError('reminderValue', '提醒值不能为负数');
         isValid = false;
       }
@@ -3407,6 +3417,279 @@ const lunarBiz = {
 
       syncMobileMenuState();
     }
+
+    // ───────────────────────────────────────────────────────
+    // v3：多提醒规则编辑器（内嵌在订阅表单中）
+    //   - 数据形态：[{ id, type, value, unit, repeatInterval?, repeatUntil?, isEnabled }]
+    //   - 新建订阅时默认渲染 4 条预设（7/3/1/0 天）
+    //   - 编辑订阅时通过 /api/subscriptions/:id/reminders 拉取
+    //   - 表单提交时自动收集并附加在 reminderRules 字段
+    // ───────────────────────────────────────────────────────
+    (function () {
+      const RULE_TYPES = [
+        { value: 'before_expiry', label: '到期前' },
+        { value: 'on_expiry', label: '到期当天' },
+        { value: 'after_expiry', label: '到期后' }
+      ];
+      const UNITS = [
+        { value: 'days', label: '天' },
+        { value: 'hours', label: '小时' }
+      ];
+      const REPEAT_UNTIL = [
+        { value: 'renewed', label: '续费' },
+        { value: 'acknowledged', label: '手动确认' },
+        { value: 'never', label: '不停止' }
+      ];
+
+      function uuid() {
+        return (crypto && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : 'r-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      }
+
+      function defaultPresets() {
+        return [
+          { id: uuid(), type: 'before_expiry', value: 7, unit: 'days', repeatInterval: null, repeatUntil: 'renewed', isEnabled: true },
+          { id: uuid(), type: 'before_expiry', value: 3, unit: 'days', repeatInterval: null, repeatUntil: 'renewed', isEnabled: true },
+          { id: uuid(), type: 'before_expiry', value: 1, unit: 'days', repeatInterval: null, repeatUntil: 'renewed', isEnabled: true },
+          { id: uuid(), type: 'on_expiry', value: 0, unit: 'days', repeatInterval: null, repeatUntil: 'renewed', isEnabled: true }
+        ];
+      }
+
+      let rules = [];
+
+      function renderRow(rule) {
+        const isAfter = rule.type === 'after_expiry';
+        const wrap = document.createElement('div');
+        wrap.className = 'flex flex-wrap items-center gap-2 bg-white rounded border border-gray-200 px-2 py-2';
+        wrap.dataset.ruleId = rule.id;
+        wrap.innerHTML = `
+          <label class="inline-flex items-center text-xs">
+            <input type="checkbox" class="rule-enabled mr-1 form-checkbox h-4 w-4 text-indigo-600" ${rule.isEnabled ? 'checked' : ''}>
+            <span class="text-gray-600">启用</span>
+          </label>
+          <select class="rule-type px-2 py-1 text-xs border border-gray-300 rounded bg-white">
+            ${RULE_TYPES.map(t => `<option value="${t.value}" ${rule.type === t.value ? 'selected' : ''}>${t.label}</option>`).join('')}
+          </select>
+          <input type="number" class="rule-value w-16 px-2 py-1 text-xs border border-gray-300 rounded ${rule.type === 'on_expiry' ? 'opacity-50' : ''}" value="${rule.value}" min="0" ${rule.type === 'on_expiry' ? 'disabled' : ''}>
+          <select class="rule-unit px-2 py-1 text-xs border border-gray-300 rounded bg-white ${rule.type === 'on_expiry' ? 'opacity-50' : ''}" ${rule.type === 'on_expiry' ? 'disabled' : ''}>
+            ${UNITS.map(u => `<option value="${u.value}" ${rule.unit === u.value ? 'selected' : ''}>${u.label}</option>`).join('')}
+          </select>
+          ${isAfter ? `
+            <span class="text-xs text-gray-500">每</span>
+            <input type="number" class="rule-repeat-interval w-16 px-2 py-1 text-xs border border-gray-300 rounded" value="${rule.repeatInterval || 24}" min="1">
+            <span class="text-xs text-gray-500">小时直到</span>
+            <select class="rule-repeat-until px-2 py-1 text-xs border border-gray-300 rounded bg-white">
+              ${REPEAT_UNTIL.map(u => `<option value="${u.value}" ${rule.repeatUntil === u.value ? 'selected' : ''}>${u.label}</option>`).join('')}
+            </select>
+          ` : ''}
+          <button type="button" class="rule-delete ml-auto text-xs px-2 py-1 text-red-600 hover:bg-red-50 rounded">
+            <i class="fas fa-trash"></i>
+          </button>
+        `;
+        // 绑定事件
+        wrap.querySelector('.rule-type').addEventListener('change', () => {
+          rule.type = wrap.querySelector('.rule-type').value;
+          if (rule.type === 'after_expiry' && rule.repeatInterval == null) rule.repeatInterval = 24;
+          render();
+        });
+        wrap.querySelector('.rule-delete').addEventListener('click', () => {
+          rules = rules.filter(r => r.id !== rule.id);
+          render();
+        });
+        return wrap;
+      }
+
+      function collect() {
+        const container = document.getElementById('reminderRulesContainer');
+        if (!container) return rules;
+        const rows = container.querySelectorAll('[data-rule-id]');
+        const out = [];
+        rows.forEach(row => {
+          const rule = rules.find(r => r.id === row.dataset.ruleId);
+          if (!rule) return;
+          rule.isEnabled = row.querySelector('.rule-enabled').checked;
+          rule.type = row.querySelector('.rule-type').value;
+          rule.value = Math.max(0, Number(row.querySelector('.rule-value').value) || 0);
+          rule.unit = row.querySelector('.rule-unit').value;
+          if (rule.type === 'after_expiry') {
+            const ri = row.querySelector('.rule-repeat-interval');
+            const ru = row.querySelector('.rule-repeat-until');
+            rule.repeatInterval = ri ? Math.max(1, Number(ri.value) || 24) : 24;
+            rule.repeatUntil = ru ? ru.value : 'renewed';
+          } else {
+            rule.repeatInterval = null;
+            rule.repeatUntil = rule.repeatUntil || 'renewed';
+          }
+          out.push(rule);
+        });
+        return out;
+      }
+
+      function render() {
+        const container = document.getElementById('reminderRulesContainer');
+        if (!container) return;
+        container.innerHTML = '';
+        if (rules.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'text-xs text-gray-500 italic px-2 py-3';
+          empty.textContent = '当前没有提醒规则；订阅到期时不会发出通知。点击"添加规则"或"应用预设"。';
+          container.appendChild(empty);
+          return;
+        }
+        rules.forEach(r => container.appendChild(renderRow(r)));
+      }
+
+      // 把规则数据装载进编辑器
+      function setRules(input) {
+        rules = (Array.isArray(input) ? input : []).map(r => ({
+          id: r.id || uuid(),
+          type: r.type || 'before_expiry',
+          value: typeof r.value === 'number' ? r.value : 7,
+          unit: r.unit || 'days',
+          repeatInterval: r.repeatInterval == null ? null : Number(r.repeatInterval),
+          repeatUntil: r.repeatUntil || 'renewed',
+          isEnabled: r.isEnabled !== false
+        }));
+        render();
+      }
+
+      function getRules() {
+        return collect();
+      }
+
+      // 暴露给外部表单提交逻辑使用
+      window.ReminderRulesEditor = {
+        setRules,
+        setPresets: () => setRules(defaultPresets()),
+        clear: () => setRules([]),
+        getRules,
+        defaultPresets
+      };
+
+      // 按钮事件
+      document.addEventListener('DOMContentLoaded', () => {
+        const addBtn = document.getElementById('reminderRulesAddBtn');
+        const presetBtn = document.getElementById('reminderRulesPresetBtn');
+        if (addBtn) addBtn.addEventListener('click', () => {
+          rules.push({
+            id: uuid(),
+            type: 'before_expiry',
+            value: 7,
+            unit: 'days',
+            repeatInterval: null,
+            repeatUntil: 'renewed',
+            isEnabled: true
+          });
+          render();
+        });
+        if (presetBtn) presetBtn.addEventListener('click', () => setRules(defaultPresets()));
+      });
+
+      // 钩入"新增订阅"按钮：清空 + 默认预设
+      const addSubBtn = document.getElementById('addSubscriptionBtn');
+      if (addSubBtn) {
+        addSubBtn.addEventListener('click', () => {
+          // 延迟一帧让原有 reset 流程跑完
+          setTimeout(() => setRules(defaultPresets()), 0);
+        });
+      }
+
+      // 钩入表单提交：把规则数组塞进 body
+      const form = document.getElementById('subscriptionForm');
+      if (form) {
+        // 监听 fetch 调用是不可行的；改为劫持原始 submit handler
+        // 简单做法：直接拦截 submit 事件，在 capture 阶段先收集规则到一个全局变量
+        // 然后在 submit 流程中，原 handler 读取 subscription 之后我们加上 reminderRules
+        // 由于我们改不了原 handler，改用 body 修补方案：在 submit 之后再单独同步规则
+        form.addEventListener('submit', () => {
+          window.__pendingReminderRules = collect();
+        }, true);
+      }
+
+      // 监听 fetch 全局，在订阅请求里附带 reminderRules（最简单的劫持）
+      const originalFetch = window.fetch;
+      window.fetch = function (input, init) {
+        try {
+          if (init && init.method && init.body && /\/api\/subscriptions(?:\/[^/]+)?$/.test(typeof input === 'string' ? input : input.url || '')) {
+            const m = String(init.method).toUpperCase();
+            if ((m === 'POST' || m === 'PUT') && window.__pendingReminderRules) {
+              const body = JSON.parse(init.body);
+              body.reminderRules = window.__pendingReminderRules;
+              init.body = JSON.stringify(body);
+            }
+          }
+        } catch (e) { /* ignore */ }
+        return originalFetch.call(this, input, init).then(async (resp) => {
+          // 编辑模式（PUT）：调用 PUT /api/subscriptions/:id/reminders 同步替换规则
+          try {
+            const url = typeof input === 'string' ? input : (input.url || '');
+            if (
+              init && init.method && String(init.method).toUpperCase() === 'PUT' &&
+              /\/api\/subscriptions\/[^/]+$/.test(url) && resp.ok && window.__pendingReminderRules
+            ) {
+              const id = url.split('/').pop();
+              const rulesNow = window.__pendingReminderRules;
+              window.__pendingReminderRules = null;
+              await originalFetch('/api/subscriptions/' + id + '/reminders', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({ rules: rulesNow })
+              }).catch(err => console.warn('[reminders] 同步规则失败:', err));
+            } else if (init && init.method && String(init.method).toUpperCase() === 'POST') {
+              // POST 由后端在创建时一并应用 reminderRules（见 v3-routes），这里清空缓存
+              window.__pendingReminderRules = null;
+            }
+          } catch (e) { /* ignore */ }
+          return resp;
+        });
+      };
+    })();
+
+    // 编辑订阅时拉取规则（钩在 editSubscription / subscription detail 加载之后）
+    (function () {
+      const originalEditSubscription = window.editSubscription;
+      // editSubscription 是顶层 async 函数；通过点击事件代理来钩入更稳。
+      // 这里改为：每次在 subscriptionId 字段被填值后异步 GET 规则。
+      const subIdField = document.getElementById('subscriptionId');
+      if (!subIdField) return;
+      const observer = new MutationObserver(() => {
+        const id = subIdField.value;
+        if (!id) return;
+        fetch('/api/subscriptions/' + id + '/reminders', { credentials: 'same-origin' })
+          .then(r => r.ok ? r.json() : null)
+          .then(data => {
+            if (data && Array.isArray(data.rules)) {
+              if (window.ReminderRulesEditor) window.ReminderRulesEditor.setRules(data.rules);
+            }
+          })
+          .catch(() => { /* ignore */ });
+      });
+      // 观察 value 变化（input 元素需要 listen 'input' / 'change'，但我们也用 setInterval 兜底）
+      subIdField.addEventListener('change', () => observer.observe);
+      // 主动轮询：当 modal 不隐藏并且 subscriptionId 有值时同步一次
+      let lastId = '';
+      setInterval(() => {
+        const modal = document.getElementById('subscriptionModal');
+        if (!modal || modal.classList.contains('hidden')) {
+          lastId = '';
+          return;
+        }
+        const id = subIdField.value;
+        if (id && id !== lastId) {
+          lastId = id;
+          fetch('/api/subscriptions/' + id + '/reminders', { credentials: 'same-origin' })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+              if (data && Array.isArray(data.rules) && window.ReminderRulesEditor) {
+                window.ReminderRulesEditor.setRules(data.rules);
+              }
+            })
+            .catch(() => {});
+        }
+      }, 500);
+    })();
   </script>
 </body>
 </html>

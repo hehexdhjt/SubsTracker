@@ -93,6 +93,20 @@ async function handleReminderRoute(request, env, method, subId, ruleId) {
     return json({ success: true, rule });
   }
 
+  // PUT /subscriptions/:id/reminders（不带 ruleId）→ 整体替换规则列表
+  if (method === 'PUT' && !ruleId) {
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return json({ success: false, message: '请求体不是合法 JSON' }, 400);
+    }
+    const rules = Array.isArray(body && body.rules) ? body.rules : [];
+    await remindersRepo.replaceForSubscription(env, subId, rules);
+    const saved = await remindersRepo.listForSubscription(env, subId);
+    return json({ success: true, rules: saved });
+  }
+
   // PUT /subscriptions/:id/reminders/:ruleId
   if (method === 'PUT' && ruleId) {
     let body;
