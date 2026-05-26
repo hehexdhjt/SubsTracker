@@ -3713,5 +3713,16 @@ const lunarBiz = {
       }, 500);
     })();
   </script>
+  <script>
+    // 显示版本号
+    fetch('/api/version').then(r=>r.json()).then(d=>{
+      if(d.version){
+        const footer=document.createElement('div');
+        footer.className='text-center text-xs text-gray-400 py-4';
+        footer.textContent='SubsTracker v'+d.version;
+        document.body.appendChild(footer);
+      }
+    }).catch(()=>{});
+  </script>
 </body>
 </html>
