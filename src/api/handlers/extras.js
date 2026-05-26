@@ -20,6 +20,10 @@
 import * as remindersRepo from '../../data/reminders.repo.js';
 import * as notifyLogsRepo from '../../data/notification-logs.repo.js';
 import * as schedLogsRepo from '../../data/scheduler-logs.repo.js';
+import { getCategories, addCategory } from '../../data/categories.js';
+import { getNextFireTime } from '../../services/notify/reminder-engine.js';
+
+export const VERSION = '3.0.0';
 
 /** 标准 JSON 响应 */
 function json(data, status = 200) {
@@ -47,6 +51,22 @@ export async function handleExtraRoutes(request, env, path) {
     return handleReminderRoute(request, env, method, subId, ruleId);
   }
 
+  // /subscriptions/:id/next-reminder
+  const nrMatch = path.match(/^\/subscriptions\/([^/]+)\/next-reminder\/?$/);
+  if (nrMatch && method === 'GET') {
+    const [, subId] = nrMatch;
+    const { getSubscription } = await import('../../data/subscriptions.js');
+    const sub = await getSubscription(subId, env);
+    if (!sub) return json({ success: false, message: '订阅不存在' }, 404);
+    const rules = await remindersRepo.listForSubscription(env, subId);
+    const nowIso = new Date().toISOString();
+    const times = rules
+      .map((r) => ({ ruleId: r.id, type: r.type, value: r.value, unit: r.unit, nextFireTime: getNextFireTime(r, sub.expiryDate, nowIso) }))
+      .filter((t) => t.nextFireTime !== null)
+      .sort((a, b) => new Date(a.nextFireTime).getTime() - new Date(b.nextFireTime).getTime());
+    return json({ success: true, nextReminder: times[0] || null, allUpcoming: times });
+  }
+
   // /notification-logs
   if (path === '/notification-logs' && method === 'GET') {
     return handleNotifyLogsList(request, env);
@@ -55,6 +75,26 @@ export async function handleExtraRoutes(request, env, path) {
   // /scheduler-logs
   if (path === '/scheduler-logs' && method === 'GET') {
     return handleSchedLogsList(request, env);
+  }
+
+  // /version
+  if (path === '/version' && method === 'GET') {
+    return json({ success: true, version: VERSION });
+  }
+
+  // /categories
+  if (path === '/categories') {
+    if (method === 'GET') {
+      return json({ success: true, categories: await getCategories(env) });
+    }
+    if (method === 'POST') {
+      let body;
+      try { body = await request.json(); } catch { return json({ success: false, message: '请求体不是合法 JSON' }, 400); }
+      const name = body && body.name;
+      if (!name || !name.trim()) return json({ success: false, message: '分类名不能为空' }, 400);
+      await addCategory(env, name);
+      return json({ success: true });
+    }
   }
 
   return null;
