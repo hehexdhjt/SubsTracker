@@ -241,3 +241,70 @@ describe('POST /api/subscriptions 自动应用提醒规则', () => {
     expect(rules[0].value).toBe(14);
   });
 });
+
+describe('GET /api/version', () => {
+  it('返回版本号', async () => {
+    const cookie = await loginCookie();
+    const res = await app.request('/api/version', { headers: { Cookie: cookie } }, env);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.version).toBe('3.0.0');
+  });
+});
+
+describe('GET/POST /api/categories', () => {
+  it('初始为空数组', async () => {
+    const cookie = await loginCookie();
+    const res = await app.request('/api/categories', { headers: { Cookie: cookie } }, env);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.categories).toEqual([]);
+  });
+
+  it('POST 新增分类后 GET 返回', async () => {
+    const cookie = await loginCookie();
+    await app.request('/api/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ name: '娱乐' })
+    }, env);
+    const res = await app.request('/api/categories', { headers: { Cookie: cookie } }, env);
+    const body = await res.json();
+    expect(body.categories).toContain('娱乐');
+  });
+
+  it('创建订阅时自动保存分类', async () => {
+    const cookie = await loginCookie();
+    await app.request('/api/subscriptions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ name: 'Netflix', expiryDate: '2026-12-31T00:00:00Z', category: '流媒体' })
+    }, env);
+    const res = await app.request('/api/categories', { headers: { Cookie: cookie } }, env);
+    const body = await res.json();
+    expect(body.categories).toContain('流媒体');
+  });
+});
+
+describe('GET /api/subscriptions/:id/next-reminder', () => {
+  it('返回最近的下次触发时间', async () => {
+    const cookie = await loginCookie();
+    // Create a subscription with future expiry
+    const createRes = await app.request('/api/subscriptions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ name: 'Test', expiryDate: '2027-01-01T00:00:00Z', periodValue: 1, periodUnit: 'month' })
+    }, env);
+    const subId = (await createRes.json()).subscription.id;
+
+    const res = await app.request(`/api/subscriptions/${subId}/next-reminder`, {
+      headers: { Cookie: cookie }
+    }, env);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.nextReminder).not.toBeNull();
+    expect(body.nextReminder.nextFireTime).toBeTruthy();
+    expect(body.allUpcoming.length).toBeGreaterThan(0);
+  });
+});

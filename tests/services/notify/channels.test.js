@@ -188,6 +188,22 @@ describe('barkChannel 自定义服务器 URL', () => {
     const body = JSON.parse(captured.mock.calls[0][1].body);
     expect(body.device_key).toBe('KKK');
   });
+
+  it('BARK_SERVER 含 user:pass → 发送 Basic Auth header', async () => {
+    const captured = vi.fn();
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      captured(url, init);
+      return jsonResponse({ code: 200 });
+    });
+    const r = await barkChannel.send(
+      { title: 'T', content: 'C' },
+      { BARK_SERVER: 'https://admin:p%40ss@my-bark.example/MYKEY' }
+    );
+    expect(r.success).toBe(true);
+    expect(captured.mock.calls[0][0]).toBe('https://my-bark.example/MYKEY');
+    const headers = captured.mock.calls[0][1].headers;
+    expect(headers['Authorization']).toBe(`Basic ${btoa('admin:p@ss')}`);
+  });
 });
 
 describe('webhookChannel 模板', () => {
