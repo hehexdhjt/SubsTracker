@@ -2897,20 +2897,30 @@ const lunarBiz = {
       const list = document.getElementById(listId);
       
       if (!input || !list) return;
-      list.innerHTML = options.map(opt => 
-        '<div class="dropdown-item">' + opt + '</div>'
-      ).join('');
+
+      function renderItems(filter) {
+        const filtered = filter ? options.filter(o => o.includes(filter)) : options;
+        list.innerHTML = filtered.map(opt => 
+          '<div class="dropdown-item">' + opt + '</div>'
+        ).join('');
+      }
+      renderItems('');
 
       if (!input.dataset.dropdownBound) {
         input.dataset.dropdownBound = 'true';
         const showList = (e) => {
           e.stopPropagation();
           document.querySelectorAll('.custom-dropdown-list').forEach(el => el.classList.remove('show'));
+          renderItems(input.value.trim());
           list.classList.add('show');
         };
 
         input.addEventListener('focus', showList);
-        input.addEventListener('click', showList); // 适配移动端点击
+        input.addEventListener('click', showList);
+        input.addEventListener('input', () => {
+          renderItems(input.value.trim());
+          if (!list.classList.contains('show')) list.classList.add('show');
+        });
 
         list.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -2938,7 +2948,13 @@ const lunarBiz = {
       const cancelBtn = document.getElementById('cancelBtn');
       
       initCustomDropdown('customType', 'customTypeDropdown', TYPE_OPTIONS); // 初始化自定义下拉菜单
-      initCustomDropdown('category', 'categoryDropdown', CATEGORY_OPTIONS);    
+      fetch('/api/categories').then(r => r.json()).then(data => {
+        const saved = (data && data.categories) || [];
+        const merged = [...new Set([...saved, ...CATEGORY_OPTIONS])];
+        initCustomDropdown('category', 'categoryDropdown', merged);
+      }).catch(() => {
+        initCustomDropdown('category', 'categoryDropdown', CATEGORY_OPTIONS);
+      });    
       
       if (calculateExpiryBtn && !calculateExpiryBtn.dataset.bound) {
         calculateExpiryBtn.dataset.bound = 'true';
