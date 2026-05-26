@@ -15,10 +15,11 @@
  */
 
 import { getConfig } from './config.js';
-import { getCurrentTimeInTimezone, getTimezoneMidnightTimestamp } from '../core/time.js';
+import { getTimezoneMidnightTimestamp, getNowInTimezone } from '../core/time.js';
 import { lunarCalendar, lunarBiz } from '../core/lunar.js';
 import { resolveReminderSetting } from '../services/notify/reminder.js';
 import * as subRepo from './subscriptions.repo.js';
+import { addCategory } from './categories.js';
 
 /**
  * 裁剪支付历史，保留 1 条 initial + 最近 N 条其他记录。
@@ -78,7 +79,10 @@ async function createSubscription(subscription, env) {
     }
 
     let expiryDate = new Date(subscription.expiryDate);
-    const currentTime = getCurrentTimeInTimezone('UTC');
+    const config = await getConfig(env);
+    const timezone = config.TIMEZONE || 'Asia/Shanghai';
+    const now = getNowInTimezone(timezone);
+    const todayMidnight = getTimezoneMidnightTimestamp(now.utc, timezone);
 
     let useLunar = !!subscription.useLunar;
     if (useLunar) {
@@ -89,7 +93,7 @@ async function createSubscription(subscription, env) {
       );
 
       if (lunar && subscription.periodValue && subscription.periodUnit) {
-        while (expiryDate <= currentTime) {
+        while (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight) {
           lunar = lunarBiz.addLunarPeriod(lunar, subscription.periodValue, subscription.periodUnit);
           const solar = lunarBiz.lunar2solar(lunar);
           expiryDate = new Date(solar.year, solar.month - 1, solar.day);
@@ -97,8 +101,8 @@ async function createSubscription(subscription, env) {
         subscription.expiryDate = expiryDate.toISOString();
       }
     } else {
-      if (expiryDate < currentTime && subscription.periodValue && subscription.periodUnit) {
-        while (expiryDate < currentTime) {
+      if (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight && subscription.periodValue && subscription.periodUnit) {
+        while (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight) {
           if (subscription.periodUnit === 'day') {
             expiryDate.setDate(expiryDate.getDate() + subscription.periodValue);
           } else if (subscription.periodUnit === 'month') {
@@ -113,7 +117,7 @@ async function createSubscription(subscription, env) {
 
     const reminderSetting = resolveReminderSetting(subscription);
 
-    const initialPaymentDate = subscription.startDate || currentTime.toISOString();
+    const initialPaymentDate = subscription.startDate || now.utc.toISOString();
     const newSubscription = {
       id: Date.now().toString(),
       name: subscription.name,
@@ -157,6 +161,7 @@ async function createSubscription(subscription, env) {
     };
 
     await subRepo.save(env, newSubscription);
+    if (newSubscription.category) await addCategory(env, newSubscription.category);
 
     return { success: true, subscription: newSubscription };
   } catch (error) {
@@ -184,7 +189,10 @@ async function updateSubscription(id, subscription, env) {
     }
 
     let expiryDate = new Date(subscription.expiryDate);
-    const currentTime = getCurrentTimeInTimezone('UTC');
+    const config = await getConfig(env);
+    const timezone = config.TIMEZONE || 'Asia/Shanghai';
+    const now = getNowInTimezone(timezone);
+    const todayMidnight = getTimezoneMidnightTimestamp(now.utc, timezone);
 
     let useLunar = !!subscription.useLunar;
     if (useLunar) {
@@ -196,17 +204,17 @@ async function updateSubscription(id, subscription, env) {
       if (!lunar) {
         return { success: false, message: '农历日期超出支持范围（1900-2100年）' };
       }
-      if (lunar && expiryDate < currentTime && subscription.periodValue && subscription.periodUnit) {
+      if (lunar && getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight && subscription.periodValue && subscription.periodUnit) {
         do {
           lunar = lunarBiz.addLunarPeriod(lunar, subscription.periodValue, subscription.periodUnit);
           const solar = lunarBiz.lunar2solar(lunar);
           expiryDate = new Date(solar.year, solar.month - 1, solar.day);
-        } while (expiryDate < currentTime);
+        } while (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight);
         subscription.expiryDate = expiryDate.toISOString();
       }
     } else {
-      if (expiryDate < currentTime && subscription.periodValue && subscription.periodUnit) {
-        while (expiryDate < currentTime) {
+      if (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight && subscription.periodValue && subscription.periodUnit) {
+        while (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight) {
           if (subscription.periodUnit === 'day') {
             expiryDate.setDate(expiryDate.getDate() + subscription.periodValue);
           } else if (subscription.periodUnit === 'month') {
@@ -272,7 +280,7 @@ async function updateSubscription(id, subscription, env) {
         existing.lastPaymentDate ||
         existing.startDate ||
         existing.createdAt ||
-        currentTime.toISOString(),
+        now.utc.toISOString(),
       paymentHistory,
       isActive: subscription.isActive !== undefined ? subscription.isActive : existing.isActive,
       autoRenew:
@@ -286,6 +294,7 @@ async function updateSubscription(id, subscription, env) {
     };
 
     await subRepo.save(env, merged);
+    if (merged.category) await addCategory(env, merged.category);
 
     return { success: true, subscription: merged };
   } catch (error) {
@@ -333,11 +342,10 @@ async function manualRenewSubscription(id, env, options = {}) {
     }
 
     const config = await getConfig(env);
-    const currentTime = getCurrentTimeInTimezone('UTC');
-    const todayMidnight = getTimezoneMidnightTimestamp(currentTime, 'UTC');
-    void todayMidnight;
+    const timezone = config.TIMEZONE || 'Asia/Shanghai';
+    const now = getNowInTimezone(timezone);
 
-    const paymentDate = options.paymentDate ? new Date(options.paymentDate) : currentTime;
+    const paymentDate = options.paymentDate ? new Date(options.paymentDate) : now.utc;
     const amount = options.amount !== undefined ? options.amount : subscription.amount || 0;
     const periodMultiplier = options.periodMultiplier || 1;
     const note = options.note || '手动续订';
