@@ -142,3 +142,47 @@ function decideAfterExpiry(rule, ctx) {
   }
   return { fire: false, reason: `after_expiry_within_${interval}h_window` };
 }
+
+/**
+ * 计算规则的下次触发时间（ISO 字符串）。
+ *
+ * @param {ReminderRule} rule
+ * @param {string} expiryDateIso 订阅到期日 ISO
+ * @param {string} [nowIso] 当前时间 ISO（默认 now）
+ * @returns {string|null} 下次触发的 ISO 时间，或 null（规则已禁用/不再触发）
+ */
+export function getNextFireTime(rule, expiryDateIso, nowIso) {
+  if (!rule || rule.isEnabled === false) return null;
+
+  const expiry = new Date(expiryDateIso).getTime();
+  const now = nowIso ? new Date(nowIso).getTime() : Date.now();
+  if (Number.isNaN(expiry)) return null;
+
+  const MS_HOUR = 3600_000;
+  const MS_DAY = 86400_000;
+
+  if (rule.type === 'before_expiry') {
+    let fireAt;
+    if (rule.unit === 'hours') {
+      fireAt = expiry - rule.value * MS_HOUR;
+    } else {
+      fireAt = expiry - rule.value * MS_DAY;
+    }
+    return fireAt >= now ? new Date(fireAt).toISOString() : null;
+  }
+
+  if (rule.type === 'on_expiry') {
+    return expiry >= now ? new Date(expiry).toISOString() : null;
+  }
+
+  if (rule.type === 'after_expiry') {
+    if (now < expiry) return new Date(expiry).toISOString();
+    const interval = (rule.repeatInterval && rule.repeatInterval > 0) ? rule.repeatInterval : 24;
+    const elapsed = now - expiry;
+    const periods = Math.ceil(elapsed / (interval * MS_HOUR));
+    const nextFire = expiry + periods * interval * MS_HOUR;
+    return new Date(nextFire).toISOString();
+  }
+
+  return null;
+}
