@@ -25,16 +25,25 @@ export const barkChannel = {
 
     const serverUrl = (config.BARK_SERVER || 'https://api.day.app').replace(/\/+$/, '');
 
-    let url, /** @type {Record<string, any>} */ body;
+    let url, /** @type {Record<string, string>} */ headers = { 'Content-Type': 'application/json; charset=utf-8' }, /** @type {Record<string, any>} */ body;
     try {
-      const parsedPath = new URL(serverUrl).pathname;
-      const isCustomUrl = parsedPath && parsedPath !== '/';
+      const parsed = new URL(serverUrl);
+      const isCustomUrl = parsed.pathname && parsed.pathname !== '/';
+
+      // Extract Basic Auth credentials if present
+      if (parsed.username) {
+        const credentials = `${decodeURIComponent(parsed.username)}:${decodeURIComponent(parsed.password || '')}`;
+        headers['Authorization'] = `Basic ${btoa(credentials)}`;
+        parsed.username = '';
+        parsed.password = '';
+      }
+
       if (isCustomUrl) {
-        url = serverUrl;
+        url = parsed.href.replace(/\/+$/, '');
         body = { title: payload.title, body: stripMarkdown(payload.content) };
       } else {
         if (!config.BARK_DEVICE_KEY) return fail('bark', '标准 Bark API 缺少 BARK_DEVICE_KEY');
-        url = `${serverUrl}/push`;
+        url = `${parsed.href.replace(/\/+$/, '')}/push`;
         body = {
           title: payload.title,
           body: stripMarkdown(payload.content),
@@ -50,7 +59,7 @@ export const barkChannel = {
     try {
       const r = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        headers,
         body: JSON.stringify(body)
       });
       const result = await r.json().catch(() => ({}));
