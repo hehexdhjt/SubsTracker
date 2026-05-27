@@ -1,5 +1,6 @@
 import { formatTimeInTimezone, formatTimezoneDisplay } from '../../core/time.js';
 import { lunarCalendar } from '../../core/lunar.js';
+import { formatAmount } from '../../core/currency-format.js';
 
 function resolveReminderSetting(subscription) {
   const defaultDays = subscription && subscription.reminderDays !== undefined ? Number(subscription.reminderDays) : 7;
@@ -89,13 +90,8 @@ function formatNotificationContent(subscriptions, config) {
 
     const calendarType = sub.useLunar ? '农历' : '公历';
     const autoRenewText = sub.autoRenew ? '是' : '否';
-    const currencySymbols = {
-      CNY: '¥', USD: '$', HKD: 'HK$', TWD: 'NT$',
-      JPY: '¥', EUR: '€', GBP: '£', KRW: '₩', TRY: '₺'
-    };
-    const amountConfigured = sub.amount !== null && sub.amount !== undefined && !Number.isNaN(Number(sub.amount));
-    const amountCurrency = currencySymbols[sub.currency || 'CNY'] || '¥';
-    const amountText = amountConfigured ? `\n金额: ${amountCurrency}${Number(sub.amount).toFixed(2)}/周期` : '';
+    const formattedAmount = formatAmount(sub.amount, sub.currency || 'CNY');
+    const amountText = formattedAmount ? `\n金额: ${formattedAmount}/周期` : '';
 
     const subscriptionContent = `${statusEmoji} **${sub.name}**
 类型: ${typeText} ${periodText}

@@ -5,6 +5,7 @@ import { handleThirdPartyNotify } from './handlers/notify.js';
 import { handleSubscriptions } from './handlers/subscriptions.js';
 import { getConfig } from '../data/config.js';
 import { handleTestNotification } from './handlers/test-notification.js';
+import { handleExtraRoutes } from "./handlers/extras.js";
 
 async function handleApiRequest(request, env) {
   const url = new URL(request.url);
@@ -41,6 +42,10 @@ async function handleApiRequest(request, env) {
   if (path === '/test-notification' && method === 'POST') {
     return handleTestNotification(request, env);
   }
+
+  // 新增路由：提醒规则 / 通知日志 / 调度日志（提醒规则 / 通知日志 / 调度日志）
+  const extraResponse = await handleExtraRoutes(request, env, path);
+  if (extraResponse) return extraResponse;
 
   const subscriptionResponse = await handleSubscriptions(request, env, path);
   if (subscriptionResponse) return subscriptionResponse;

@@ -13,6 +13,7 @@ import { getConfig } from '../../data/config.js';
 import { sendNotificationToAllChannels } from '../../services/notify/index.js';
 import { lunarCalendar } from '../../core/lunar.js';
 import { formatTimeInTimezone, formatTimezoneDisplay } from '../../core/time.js';
+import { formatAmount } from '../../core/currency-format.js';
 import { extractTagsFromSubscriptions } from '../utils.js';
 
 async function testSingleSubscriptionNotification(id, env) {
@@ -40,13 +41,8 @@ async function testSingleSubscriptionNotification(id, env) {
 
     const calendarType = subscription.useLunar ? '农历' : '公历';
     const autoRenewText = subscription.autoRenew ? '是' : '否';
-    const currencySymbols = {
-      CNY: '¥', USD: '$', HKD: 'HK$', TWD: 'NT$',
-      JPY: '¥', EUR: '€', GBP: '£', KRW: '₩', TRY: '₺'
-    };
-    const amountConfigured = subscription.amount !== null && subscription.amount !== undefined && !Number.isNaN(Number(subscription.amount));
-    const amountCurrency = currencySymbols[subscription.currency || 'CNY'] || '¥';
-    const amountText = amountConfigured ? `\n金额: ${amountCurrency}${Number(subscription.amount).toFixed(2)}/周期` : '';
+    const formattedAmount = formatAmount(subscription.amount, subscription.currency || 'CNY');
+    const amountText = formattedAmount ? `\n金额: ${formattedAmount}/周期` : '';
 
     const categoryText = subscription.category ? subscription.category : '未分类';
 
@@ -62,6 +58,7 @@ async function testSingleSubscriptionNotification(id, env) {
 
     const tags = extractTagsFromSubscriptions([subscription]);
     const notifyResult = await sendNotificationToAllChannels(title, commonContent, config, '[手动测试]', {
+      env, subId: id, ruleId: 'manual-test',
       metadata: { tags }
     });
 
@@ -100,6 +97,21 @@ async function handleSubscriptions(request, env, path) {
     if (method === 'POST') {
       const subscription = await request.json();
       const result = await createSubscription(subscription, env);
+      // 本次：创建成功后写入提醒规则
+      if (result.success && result.subscription) {
+        try {
+          const remindersRepo = await import('../../data/reminders.repo.js');
+          const incoming = Array.isArray(subscription.reminderRules)
+            ? subscription.reminderRules
+            : null;
+          const rules = incoming && incoming.length > 0
+            ? incoming.map(remindersRepo.normalizeRule)
+            : remindersRepo.defaultPresetRules();
+          await remindersRepo.replaceForSubscription(env, result.subscription.id, rules);
+        } catch (err) {
+          console.error('[subscriptions] 写入提醒规则失败（订阅本身已创建）:', err);
+        }
+      }
       return new Response(JSON.stringify(result), {
         status: result.success ? 201 : 400,
         headers: { 'Content-Type': 'application/json' }

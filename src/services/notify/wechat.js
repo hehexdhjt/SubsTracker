@@ -1,76 +1,81 @@
-async function sendWechatBotNotification(title, content, config) {
-  try {
-    if (!config.WECHATBOT_WEBHOOK) {
-      console.error('[企业微信机器人] 通知未配置，缺少Webhook URL');
-      return false;
-    }
+// @ts-check
+/**
+ * 企业微信机器人通知渠道
+ *
+ * 支持 text / markdown 两种消息格式，可配置 @所有人 / @手机号。
+ */
+import { ok, fail, errorMessage, stripMarkdown } from './channel.js';
 
-    console.log('[企业微信机器人] 开始发送通知到: ' + config.WECHATBOT_WEBHOOK);
+/** @type {import('./channel.js').Channel} */
+export const wecomChannel = {
+  name: 'wechatbot',
 
-    let messageData;
+  validateConfig(config) {
+    if (!config.WECHATBOT_WEBHOOK) return { ok: false, error: '缺少 WECHATBOT_WEBHOOK' };
+    return { ok: true };
+  },
+
+  async send(payload, config) {
+    const v = wecomChannel.validateConfig(config);
+    if (!v.ok) return fail('wechatbot', v.error || '配置无效');
+
     const msgType = config.WECHATBOT_MSG_TYPE || 'text';
+    let messageData;
 
     if (msgType === 'markdown') {
-      const markdownContent = `# ${title}\n\n${content}`;
-      messageData = {
-        msgtype: 'markdown',
-        markdown: { content: markdownContent }
-      };
+      const markdownContent = `# ${payload.title}\n\n${payload.content}`;
+      messageData = { msgtype: 'markdown', markdown: { content: markdownContent } };
     } else {
-      const textContent = `${title}\n\n${content}`;
-      messageData = {
-        msgtype: 'text',
-        text: { content: textContent }
-      };
+      const textContent = `${payload.title}\n\n${stripMarkdown(payload.content)}`;
+      messageData = { msgtype: 'text', text: { content: textContent } };
     }
 
-    if (config.WECHATBOT_AT_ALL === 'true') {
-      if (msgType === 'text') {
-        messageData.text.mentioned_list = ['@all'];
-      }
+    if (config.WECHATBOT_AT_ALL === 'true' && msgType === 'text') {
+      messageData.text.mentioned_list = ['@all'];
     } else if (config.WECHATBOT_AT_MOBILES) {
-      const mobiles = config.WECHATBOT_AT_MOBILES.split(',').map(m => m.trim()).filter(m => m);
-      if (mobiles.length > 0) {
-        if (msgType === 'text') {
-          messageData.text.mentioned_mobile_list = mobiles;
-        }
+      const mobiles = String(config.WECHATBOT_AT_MOBILES)
+        .split(',')
+        .map((m) => m.trim())
+        .filter(Boolean);
+      if (mobiles.length > 0 && msgType === 'text') {
+        messageData.text.mentioned_mobile_list = mobiles;
       }
     }
 
-    console.log('[企业微信机器人] 发送消息数据:', JSON.stringify(messageData, null, 2));
+    try {
+      const r = await fetch(config.WECHATBOT_WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(messageData)
+      });
+      const text = await r.text();
+      if (!r.ok) return fail('wechatbot', `HTTP ${r.status}`, text);
 
-    const response = await fetch(config.WECHATBOT_WEBHOOK, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(messageData)
-    });
-
-    const responseText = await response.text();
-    console.log('[企业微信机器人] 响应状态:', response.status);
-    console.log('[企业微信机器人] 响应内容:', responseText);
-
-    if (response.ok) {
+      let result;
       try {
-        const result = JSON.parse(responseText);
-        if (result.errcode === 0) {
-          console.log('[企业微信机器人] 通知发送成功');
-          return true;
-        } else {
-          console.error('[企业微信机器人] 发送失败，错误码:', result.errcode, '错误信息:', result.errmsg);
-          return false;
-        }
-      } catch (parseError) {
-        console.error('[企业微信机器人] 解析响应失败:', parseError);
-        return false;
+        result = JSON.parse(text);
+      } catch {
+        return fail('wechatbot', '响应非 JSON', text);
       }
-    } else {
-      console.error('[企业微信机器人] HTTP请求失败，状态码:', response.status);
-      return false;
+      return result.errcode === 0
+        ? ok('wechatbot', result)
+        : fail('wechatbot', `企业微信返回 errcode=${result.errcode} ${result.errmsg || ''}`, result);
+    } catch (err) {
+      return fail('wechatbot', errorMessage(err));
     }
-  } catch (error) {
-    console.error('[企业微信机器人] 发送通知失败:', error);
-    return false;
-  }
-}
+  },
 
-export { sendWechatBotNotification };
+  async test(config) {
+    return wecomChannel.send(
+      { title: '订阅管理 - 测试通知', content: '这是一条企业微信测试通知。' },
+      config
+    );
+  }
+};
+
+/** @deprecated 旧版兼容函数 */
+export async function sendWechatBotNotification(title, content, config) {
+  const r = await wecomChannel.send({ title, content }, config);
+  if (!r.success) console.error('[企业微信]', r.error);
+  return r.success;
+}

@@ -1,3 +1,20 @@
+node_modules/
 .wrangler/
 .codeflicker/
-package-lock.json
+dist/
+coverage/
+.DS_Store
+
+# 本地调研与草稿，不入库
+优化文档/
+CHANGELOG-TEST.md
+docs/
+
+# AI 工具本地配置
+.codex/
+.agents/
+
+# 环境变量
+.env
+.env.*
+.dev.vars

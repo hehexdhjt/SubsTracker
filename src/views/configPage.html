@@ -9,11 +9,20 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
   ${themeResources} <style>
     
+    #toast-container {
+      position: fixed; top: 20px; right: 20px; z-index: 10000;
+      display: flex; flex-direction: column; gap: 8px; max-width: 380px;
+    }
     .toast {
-      position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px;
-      color: white; font-weight: 500; z-index: 1000; transform: translateX(400px);
+      padding: 12px 36px 12px 16px; border-radius: 8px; position: relative;
+      color: white; font-weight: 500; transform: translateX(400px);
       transition: all 0.3s ease-in-out; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
+    .toast .toast-close {
+      position: absolute; top: 8px; right: 10px; cursor: pointer;
+      opacity: 0.7; font-size: 14px; line-height: 1;
+    }
+    .toast .toast-close:hover { opacity: 1; }
     .toast.show { transform: translateX(0); }
     .toast.success { background-color: #10b981; }
     .toast.error { background-color: #ef4444; }
@@ -27,6 +36,8 @@
     html.dark .toast.error { background-color: #dc2626; }
     html.dark .toast.info { background-color: #2563eb; }
     html.dark .toast.warning { background-color: #d97706; }
+    html.dark #floatingSaveBar { background-color: #1f2937; border-color: #374151; }
+    html.dark #floatingSaveBar span { color: #d1d5db; }
     
     .config-section { 
       border: 1px solid #e5e7eb; 
@@ -84,6 +95,9 @@
           <a href="/admin" class="text-gray-700 hover:text-gray-900 border-b-2 border-transparent hover:border-gray-300 px-3 py-2 rounded-md text-sm font-medium transition">
             <i class="fas fa-list mr-1"></i>订阅列表
           </a>
+          <a href="/admin/notify-logs" class="text-gray-700 hover:text-gray-900 border-b-2 border-transparent hover:border-gray-300 px-3 py-2 rounded-md text-sm font-medium transition">
+            <i class="fas fa-history mr-1"></i>通知历史
+          </a>
           <a href="/admin/config" class="text-indigo-600 border-b-2 border-indigo-600 px-3 py-2 rounded-md text-sm font-medium transition">
             <i class="fas fa-cog mr-1"></i>系统配置
           </a>
@@ -108,6 +122,9 @@
         </a>
         <a href="/admin" class="block px-3 py-3 rounded-md text-base font-medium text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 active:bg-indigo-100 transition-colors">
           <i class="fas fa-list w-6 text-center mr-2"></i>订阅列表
+        </a>
+        <a href="/admin/notify-logs" class="block px-3 py-3 rounded-md text-base font-medium text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 active:bg-indigo-100 transition-colors">
+          <i class="fas fa-history w-6 text-center mr-2"></i>通知历史
         </a>
         <a href="/admin/config" class="block px-3 py-3 rounded-md text-base font-medium text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 active:bg-indigo-100 transition-colors">
           <i class="fas fa-cog w-6 text-center mr-2"></i>系统配置
@@ -167,26 +184,30 @@
           <div class="mb-6">
           <label for="timezone" class="block text-sm font-medium text-gray-700 mb-1">时区选择</label>
           <select id="timezone" name="timezone" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white">
-            <option value="UTC">世界标准时间（UTC+0）</option>
-            <option value="Asia/Shanghai">中国标准时间（UTC+8）</option>
-            <option value="Asia/Hong_Kong">香港时间（UTC+8）</option>
-            <option value="Asia/Taipei">台北时间（UTC+8）</option>
-            <option value="Asia/Singapore">新加坡时间（UTC+8）</option>
-            <option value="Asia/Tokyo">日本时间（UTC+9）</option>
-            <option value="Asia/Seoul">韩国时间（UTC+9）</option>
-            <option value="America/New_York">美国东部时间（UTC-5）</option>
-            <option value="America/Chicago">美国中部时间（UTC-6）</option>
-            <option value="America/Denver">美国山地时间（UTC-7）</option>
-            <option value="America/Los_Angeles">美国太平洋时间（UTC-8）</option>
-            <option value="Europe/London">英国时间（UTC+0）</option>
-            <option value="Europe/Paris">巴黎时间（UTC+1）</option>
-            <option value="Europe/Berlin">柏林时间（UTC+1）</option>
-            <option value="Europe/Moscow">莫斯科时间（UTC+3）</option>
-            <option value="Australia/Sydney">悉尼时间（UTC+10）</option>
-            <option value="Australia/Melbourne">墨尔本时间（UTC+10）</option>
-            <option value="Pacific/Auckland">奥克兰时间（UTC+12）</option>
+            <optgroup label="🇨🇳 推荐">
+              <option value="Asia/Shanghai">中国标准时间（UTC+8）</option>
+            </optgroup>
+            <optgroup label="其它常用时区">
+              <option value="Asia/Hong_Kong">香港时间（UTC+8）</option>
+              <option value="Asia/Taipei">台北时间（UTC+8）</option>
+              <option value="Asia/Singapore">新加坡时间（UTC+8）</option>
+              <option value="Asia/Tokyo">日本时间（UTC+9）</option>
+              <option value="Asia/Seoul">韩国时间（UTC+9）</option>
+              <option value="UTC">世界标准时间（UTC+0）</option>
+              <option value="America/New_York">美国东部时间（UTC-5）</option>
+              <option value="America/Chicago">美国中部时间（UTC-6）</option>
+              <option value="America/Denver">美国山地时间（UTC-7）</option>
+              <option value="America/Los_Angeles">美国太平洋时间（UTC-8）</option>
+              <option value="Europe/London">英国时间（UTC+0）</option>
+              <option value="Europe/Paris">巴黎时间（UTC+1）</option>
+              <option value="Europe/Berlin">柏林时间（UTC+1）</option>
+              <option value="Europe/Moscow">莫斯科时间（UTC+3）</option>
+              <option value="Australia/Sydney">悉尼时间（UTC+10）</option>
+              <option value="Australia/Melbourne">墨尔本时间（UTC+10）</option>
+              <option value="Pacific/Auckland">奥克兰时间（UTC+12）</option>
+            </optgroup>
           </select>
-            <p class="mt-1 text-sm text-gray-500">该项仅用于兼容旧配置与展示参考；后端调度与提醒计算统一使用 UTC，页面时间始终按当前设备时区显示。</p>
+            <p class="mt-1 text-sm text-gray-500">所有时间相关的判断（通知时段、剩余天数、日期显示）都按此时区计算。中国用户保持默认 <code>Asia/Shanghai</code> 即可。</p>
           </div>
         </div>
 
@@ -195,15 +216,19 @@
           <h3 class="text-lg font-medium text-gray-900 mb-4">通知设置</h3>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div>
-              <label for="notificationHours" class="block text-sm font-medium text-gray-700">通知时段（UTC）</label>
+              <label for="notificationHours" class="block text-sm font-medium text-gray-700">
+                通知时段
+                <span id="tzLabelInline" class="text-indigo-600 font-semibold">（按你的时区）</span>
+              </label>
               <input type="text" id="notificationHours" placeholder="例如：08, 12, 20 或输入 * 表示全天"
                 class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-              <p class="mt-1 text-sm text-gray-500">可输入多个小时，使用逗号或空格分隔；留空则默认每天执行一次任务即可</p>
+              <p class="mt-1 text-sm text-gray-500">可输入多个小时，使用逗号或空格分隔；留空则全天发送（仍受 Cron 每小时触发限制）</p>
+              <div id="tzWindowPreview" class="mt-2 text-sm font-medium"></div>
             </div>
-            <div class="bg-indigo-50 border border-indigo-100 rounded-md p-3 text-sm text-indigo-700">
-              <p class="font-medium mb-1">提示</p>
-              <p>后台统一按 UTC 判断通知时段。示例：北京时间 08:00 对应 UTC 00，请在此填 <code>00</code>。</p>
-              <p class="mt-1">若 Cron 已设置为每小时执行，可用该字段限制实际发送提醒的小时段。</p>
+            <div class="bg-amber-50 border border-amber-200 rounded-md p-3 text-sm text-amber-800">
+              <p class="font-semibold mb-1"><i class="fas fa-info-circle"></i> 时区语义变更</p>
+              <p>本字段在 按 <b>你设置的时区</b> 解释。例如想让北京时间 08:00 收到提醒，<code>TIMEZONE=Asia/Shanghai</code> 时填 <code>08</code>。</p>
+              <p class="mt-1">若你之前是 老版本用户并按 UTC 填了小时数，请重新调整。Cron 仍每小时触发。</p>
             </div>
           </div>
           <div class="mb-6">
@@ -600,9 +625,31 @@
     </div>
   </div>
 
+  <!-- 悬浮保存栏 -->
+  <div id="floatingSaveBar" class="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg py-3 px-6 flex justify-between items-center z-50 transform translate-y-full transition-transform duration-300" style="display:none;">
+    <span class="text-sm text-gray-600"><i class="fas fa-exclamation-circle text-yellow-500 mr-2"></i>有未保存的更改</span>
+    <button type="button" onclick="document.getElementById('configForm').requestSubmit()" class="btn-primary text-white px-5 py-2 rounded-md text-sm font-medium">
+      <i class="fas fa-save mr-2"></i>保存配置
+    </button>
+  </div>
+
   <script>
-    function showToast(message, type = 'success', duration = 3000) {
+    // 统一 API 请求封装：401 自动跳转登录页
+    async function apiFetch(url, options) {
+      const response = await fetch(url, options);
+      if (response.status === 401) {
+        showToast('登录已过期，正在跳转登录页...', 'warning');
+        setTimeout(() => { window.location.href = '/'; }, 1000);
+        throw new Error('AUTH_EXPIRED');
+      }
+      return response;
+    }
+
+    function showToast(message, type = 'success', duration) {
+      if (!duration) duration = type === 'error' ? 6000 : type === 'warning' ? 4500 : 3000;
       const container = document.getElementById('toast-container');
+      while (container.children.length >= 5) container.removeChild(container.firstChild);
+
       const toast = document.createElement('div');
       toast.className = 'toast ' + type;
       
@@ -610,18 +657,16 @@
                    type === 'error' ? 'exclamation-circle' :
                    type === 'warning' ? 'exclamation-triangle' : 'info-circle';
       
-      toast.innerHTML = '<div class="flex items-center"><i class="fas fa-' + icon + ' mr-2"></i><span>' + message + '</span></div>';
+      toast.innerHTML = '<div class="flex items-center"><i class="fas fa-' + icon + ' mr-2"></i><span class="toast-msg"></span></div><span class="toast-close" onclick="this.parentElement.remove()">&times;</span>';
+      toast.querySelector('.toast-msg').textContent = message;
       
       container.appendChild(toast);
-      setTimeout(() => toast.classList.add('show'), 100);
-      setTimeout(() => {
+      setTimeout(() => toast.classList.add('show'), 50);
+      const timer = setTimeout(() => {
         toast.classList.remove('show');
-        setTimeout(() => {
-          if (container.contains(toast)) {
-            container.removeChild(toast);
-          }
-        }, 300);
+        setTimeout(() => { if (container.contains(toast)) container.removeChild(toast); }, 300);
       }, duration);
+      toast.querySelector('.toast-close').addEventListener('click', () => clearTimeout(timer));
     }
 
     // 记录用户是否点击了“清空”某个密钥字段；保存时会提交给后端处理
@@ -679,7 +724,7 @@
 
     async function loadConfig() {
       try {
-        const response = await fetch('/api/config');
+        const response = await apiFetch('/api/config');
         const config = await response.json();
 
         // === 安全策略 ===
@@ -747,7 +792,7 @@
         document.getElementById('showLunarGlobal').checked = config.SHOW_LUNAR === true;
 
         // 动态生成时区选项，并设置保存的值
-        generateTimezoneOptions(config.TIMEZONE || 'UTC');
+        generateTimezoneOptions(config.TIMEZONE || 'Asia/Shanghai');
 
         // 处理多选通知渠道
         const enabledNotifiers = config.ENABLED_NOTIFIERS || ['notifyx'];
@@ -759,22 +804,27 @@
       } catch (error) {
         console.error('加载配置失败:', error);
         showToast('加载配置失败，请刷新页面重试', 'error');
+        // 禁用表单防止误提交覆盖数据
+        const form = document.getElementById('configForm');
+        Array.from(form.elements).forEach(el => { el.disabled = true; });
       }
     }
     
-    // 动态生成时区选项
-    function generateTimezoneOptions(selectedTimezone = 'UTC') {
+    // 动态生成时区选项（保持与静态 HTML 一致：推荐分组在最前）
+    function generateTimezoneOptions(selectedTimezone = 'Asia/Shanghai') {
       const timezoneSelect = document.getElementById('timezone');
-      const fallbackTimezone = 'UTC';
-      
-      const timezones = [
-        { value: 'UTC', name: '世界标准时间', offset: '+0' },
-        { value: 'Asia/Shanghai', name: '中国标准时间', offset: '+8' },
+      const fallbackTimezone = 'Asia/Shanghai';
+
+      const recommended = [
+        { value: 'Asia/Shanghai', name: '中国标准时间', offset: '+8' }
+      ];
+      const others = [
         { value: 'Asia/Hong_Kong', name: '香港时间', offset: '+8' },
         { value: 'Asia/Taipei', name: '台北时间', offset: '+8' },
         { value: 'Asia/Singapore', name: '新加坡时间', offset: '+8' },
         { value: 'Asia/Tokyo', name: '日本时间', offset: '+9' },
         { value: 'Asia/Seoul', name: '韩国时间', offset: '+9' },
+        { value: 'UTC', name: '世界标准时间', offset: '+0' },
         { value: 'America/New_York', name: '美国东部时间', offset: '-5' },
         { value: 'America/Chicago', name: '美国中部时间', offset: '-6' },
         { value: 'America/Denver', name: '美国山地时间', offset: '-7' },
@@ -787,23 +837,38 @@
         { value: 'Australia/Melbourne', name: '墨尔本时间', offset: '+10' },
         { value: 'Pacific/Auckland', name: '奥克兰时间', offset: '+12' }
       ];
+      const allTimezones = [...recommended, ...others];
       
       // 清空现有选项
       timezoneSelect.innerHTML = '';
-      
-      // 添加新选项
-      timezones.forEach(tz => {
-        const option = document.createElement('option');
-        option.value = tz.value;
-        option.textContent = tz.name + '（UTC' + tz.offset + '）';
-        timezoneSelect.appendChild(option);
-      });
 
-      const timezoneExists = timezones.some(tz => tz.value === selectedTimezone);
+      // 推荐分组
+      const recGroup = document.createElement('optgroup');
+      recGroup.label = '🇨🇳 推荐';
+      recommended.forEach(tz => {
+        const o = document.createElement('option');
+        o.value = tz.value;
+        o.textContent = tz.name + '（UTC' + tz.offset + '）';
+        recGroup.appendChild(o);
+      });
+      timezoneSelect.appendChild(recGroup);
+
+      // 其它常用时区分组
+      const otherGroup = document.createElement('optgroup');
+      otherGroup.label = '其它常用时区';
+      others.forEach(tz => {
+        const o = document.createElement('option');
+        o.value = tz.value;
+        o.textContent = tz.name + '（UTC' + tz.offset + '）';
+        otherGroup.appendChild(o);
+      });
+      timezoneSelect.appendChild(otherGroup);
+
+      const timezoneExists = allTimezones.some(tz => tz.value === selectedTimezone);
       timezoneSelect.value = timezoneExists ? selectedTimezone : fallbackTimezone;
 
       if (!timezoneExists) {
-        showToast('检测到未知时区配置，已回退为 UTC，请重新确认后保存', 'warning', 4500);
+        showToast('检测到未知时区配置，已回退为 Asia/Shanghai，请重新确认后保存', 'warning', 4500);
       }
     }
     
@@ -945,7 +1010,7 @@
       submitButton.disabled = true;
 
       try {
-        const response = await fetch('/api/config', {
+        const response = await apiFetch('/api/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(config)
@@ -1065,7 +1130,7 @@
       }
 
       try {
-        const response = await fetch('/api/test-notification', {
+        const response = await apiFetch('/api/test-notification', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ type: type, ...config })
@@ -1173,6 +1238,39 @@
       wireClearSecretButton('clearPushplusToken', 'pushplusToken', 'PUSHPLUS_TOKEN');
 
       loadConfig();
+
+      // 表单变更检测：显示悬浮保存栏 + beforeunload 提示
+      let configDirty = false;
+      const form = document.getElementById('configForm');
+      const floatingBar = document.getElementById('floatingSaveBar');
+
+      form.addEventListener('input', () => {
+        if (!configDirty) {
+          configDirty = true;
+          floatingBar.style.display = '';
+          requestAnimationFrame(() => floatingBar.style.transform = 'translateY(0)');
+        }
+      });
+      form.addEventListener('change', () => {
+        if (!configDirty) {
+          configDirty = true;
+          floatingBar.style.display = '';
+          requestAnimationFrame(() => floatingBar.style.transform = 'translateY(0)');
+        }
+      });
+
+      // 保存成功后隐藏悬浮栏
+      form.addEventListener('submit', () => {
+        setTimeout(() => {
+          configDirty = false;
+          floatingBar.style.transform = 'translateY(100%)';
+          setTimeout(() => { floatingBar.style.display = 'none'; }, 300);
+        }, 500);
+      });
+
+      window.addEventListener('beforeunload', (e) => {
+        if (configDirty) { e.preventDefault(); e.returnValue = ''; }
+      });
     });
     
     // 前端展示时区（固定使用浏览器本地时区）
@@ -1184,7 +1282,7 @@
     async function showSystemTime() {
       try {
         // 获取后台配置的时区
-        const response = await fetch('/api/config');
+        const response = await apiFetch('/api/config');
         const config = await response.json();
         globalTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
         
@@ -1264,7 +1362,7 @@
         }
         timezoneCheckTimer = setInterval(async () => {
           try {
-            const response = await fetch('/api/config');
+            const response = await apiFetch('/api/config');
             await response.json();
             const newTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
@@ -1329,6 +1427,68 @@
 
       syncMobileMenuState();
     }
+
+    // ───────────────────────────────────────────────────────
+    // 本次：通知时段实时预览（按用户配置的 TIMEZONE）
+    // 当用户改 TIMEZONE / 改 notificationHours 时，下方提示实时更新
+    // ───────────────────────────────────────────────────────
+    (function () {
+      const tzSelect = document.getElementById('timezone');
+      const hoursInput = document.getElementById('notificationHours');
+      const labelInline = document.getElementById('tzLabelInline');
+      const preview = document.getElementById('tzWindowPreview');
+      if (!tzSelect || !hoursInput || !preview || !labelInline) return;
+
+      function currentTzHour(tz) {
+        try {
+          const fmt = new Intl.DateTimeFormat('en-US', {
+            timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit'
+          });
+          const parts = fmt.formatToParts(new Date());
+          let h = parts.find(p => p.type === 'hour')?.value || '00';
+          const m = parts.find(p => p.type === 'minute')?.value || '00';
+          if (h === '24') h = '00';
+          return { hh: String(h).padStart(2, '0'), mm: m };
+        } catch {
+          return { hh: '??', mm: '??' };
+        }
+      }
+
+      function parseHours(text) {
+        if (!text) return [];
+        return String(text).split(/[,，\s]+/).map(s => s.trim()).filter(Boolean).map(s => {
+          if (s === '*' || s.toUpperCase() === 'ALL') return '*';
+          const n = Number(s);
+          if (!isNaN(n)) return String(Math.max(0, Math.min(23, Math.floor(n)))).padStart(2, '0');
+          return s;
+        });
+      }
+
+      function update() {
+        const tz = tzSelect.value || 'UTC';
+        labelInline.textContent = '（按 ' + tz + '）';
+        const { hh, mm } = currentTzHour(tz);
+        const hours = parseHours(hoursInput.value);
+        const inWindow =
+          hours.length === 0 ||
+          hours.includes('*') ||
+          hours.includes(hh);
+        preview.innerHTML =
+          '当前 <b>' + tz + '</b> 时间约 <b>' + hh + ':' + mm + '</b>：'
+          + (inWindow
+              ? '<span class="text-green-600">✓ 在通知时段内</span>'
+              : '<span class="text-amber-600">✗ 不在通知时段内（下次触发将跳过发送）</span>')
+          + (hours.length === 0
+              ? '<span class="ml-2 text-gray-500 text-xs">（时段为空 = 全天可发送）</span>'
+              : '<span class="ml-2 text-gray-500 text-xs">（已配置：' + hours.join(', ') + '）</span>');
+      }
+
+      tzSelect.addEventListener('change', update);
+      hoursInput.addEventListener('input', update);
+      // 启动时先 fire 一次，并每 30s 自动刷新（小时跨边界时也能更新）
+      setTimeout(update, 200);
+      setInterval(update, 30000);
+    })();
   </script>
 </body>
 </html>

@@ -1,273 +1,183 @@
-# SubsTracker - 订阅管理与提醒系统
+# SubsTracker — 订阅管理与提醒系统
 
-基于 Cloudflare Workers 的轻量级订阅管理系统，帮助你轻松跟踪各类订阅服务的到期时间，并通过 Telegram、Webhook 等多渠道发送及时提醒。
+[![Deploy with Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/wangwangit/SubsTracker)
 
-> 🎉 项目说明：
-> - 原有稳定版本代码已保留在 **`legacy-v1`** 分支（可随时回看/回滚）
-> - 从现在开始，**`main` 分支由 AI 托管持续迭代**（功能优化、体验升级、问题修复）
-> - 欢迎大家直接试用 `main` 分支，遇到问题就提 Issue —— 我会让 AI 第一时间跟进修改 👻
-
-![image](https://github.com/user-attachments/assets/22ff1592-7836-4f73-aa13-24e9d43d7064)
+基于 Cloudflare Workers 的轻量级订阅管理系统。跟踪所有订阅服务的到期时间，通过 Telegram、Bark、Webhook 等 9 种渠道发送可靠的多档位提醒，并提供完整的发送日志用于自助排查。
 
 ---
 
 ## ✨ 功能特色
 
-### 🎯 核心功能
-- **订阅管理**：添加、编辑、删除各类订阅服务
-- **智能提醒**：自定义提前提醒天数，自动续订计算
-- **农历显示**：支持农历日期显示，可控制开关
-- **状态管理**：订阅启用/停用，过期状态自动识别
-- **财务追踪**：记录订阅费用，完整的支付历史和统计分析
-- **手动续订**：支持自定义金额、周期和备注
-- **仪表盘**：可视化展示月度/年度支出，支出趋势和分类统计
+### 🎯 订阅管理
 
-### 📱 多渠道通知
-- **Telegram**：支持 Telegram Bot 通知
-- **NotifyX**：集成 NotifyX 推送服务
-- **Webhook 通知**：支持自定义 Webhook 推送
-- **企业微信机器人**：支持企业微信群机器人通知
-- **邮件通知**：基于 Resend 的邮件服务
-- **Bark**：支持 iOS Bark 推送
-- **Server酱**：支持 Server酱 3 推送
-- **PushPlus**：支持 PushPlus 推送
+- **CRUD**：添加、编辑、删除、启用/停用各类订阅服务
+- **多档位提醒**：每订阅独立设置 N 条规则，支持"到期前 7/3/1 天 + 当天 + 到期后每 X 小时重复直到续费"
+- **自动续订**：到期后自动推进到期日并写入支付记录
+- **手动续订**：自定义金额、日期、周期数、备注
+- **支付历史**：完整记录、可编辑/删除（删除时自动回退订阅周期）
+- **农历支持**：1900-2100 年农历转换，可按农历周期续订
 
-### 🌙 农历功能
-- **农历转换**：支持 1900-2100 年农历转换
-- **智能显示**：列表和编辑页面可控制农历显示
-- **通知集成**：通知消息中可包含农历信息
+### 📱 多渠道通知（9 种）
 
-### 🎨 用户体验
-- **响应式设计**：适配桌面端和移动端
-- **备注优化**：长备注自动截断，悬停显示完整内容
-- **实时预览**：日期选择时实时显示对应农历
-- **外观风格**：支持浅色模式、深色模式、跟随系统
+| 渠道 | 状态 | 配置项 |
+|------|------|--------|
+| Telegram | ✅ MarkdownV2 + 失败降级纯文本 | Bot Token + Chat ID |
+| NotifyX | ✅ | API Key |
+| Webhook | ✅ 支持自定义 Header 与消息模板 | URL + 模板（含 `{{title}} {{content}} {{daysRemaining}}` 等） |
+| 企业微信机器人 | ✅ text/markdown + @ 提醒 | Webhook URL |
+| Resend 邮件 | ✅ HTML 模板 | API Key + 收发邮箱 |
+| Bark（iOS） | ✅ 支持自建服务器 | Server + Device Key |
+| Gotify | ✅ 自托管 | Server URL + App Token |
+| Server酱 | ✅ Server酱 3 | SendKey |
+| PushPlus | ✅ Topic + Channel | Token |
+
+### 📊 可观测性
+
+- **通知历史页** `/admin/notify-logs`：每条发送（成功 / 失败）都有记录，可按订阅、渠道、状态、时间筛选
+- **调度执行日志**：每次 Cron 触发的链路日志（命中/去重/发送/续订计数 + 失败原因），可在通知历史页折叠预览
+- **`/debug` 时区诊断**：登录后访问，显示 UTC 时间、用户 TZ 时间、当前是否在通知窗口
 
 ### 💰 财务管理
-- **订阅金额追踪**：支持多币种记录
-- **汇率换算**：支持动态汇率、固定汇率
-- **智能仪表盘**：
-  - 📊 月度/年度支出统计，环比趋势分析
-  - 💳 活跃订阅数量，月均支出计算
-  - 📅 最近7天支付记录，即将续费提醒
-  - 📈 按类型/分类的支出排行和占比
-- **支付历史管理**：
-  - 📝 完整支付记录，支持编辑/删除
-  - 🕒 精确显示计费周期
-  - 📊 累计支出和支付次数统计
-  - 🔄 删除支付记录时自动回退订阅周期
-- **高级续订功能**：
-  - 💵 自定义续订金额
-  - 📅 选择续订日期（支持回溯）
-  - 🔢 批量续订多个周期
-  - 📝 添加续订备注
-  - 👁️ 实时预览新的到期日期
+
+- 多币种（CNY / USD / HKD / TWD / JPY / EUR / GBP / KRW / TRY）+ 动态汇率换算
+- 仪表盘：月度/年度支出 + 环比 + 即将到期 + 未来 7 天续费 + 按类型/分类排行
+
+### 🔐 时区与通知时段
+
+- 配置项 `TIMEZONE` 默认 `Asia/Shanghai`，是所有时间判断与展示的真相源
+- `NOTIFICATION_HOURS` 是按 `TIMEZONE` 解释的"小时数组"，例如 `["08", "20"]`
+- 留空 = 全天可发（仍受 Cron 每小时触发限制）
+- `*` 或 `ALL` 等同于留空
 
 ---
 
-## 🧰 环境准备
+## 🚀 部署
 
-### 1) 下载项目到本地（必须）
+### 一键按钮
 
-本项目采用 Wrangler 本地部署模式，不是 Cloudflare Dashboard 直接连接 GitHub 自动部署。
-请先将项目下载到本地：
+点击页面顶部 **Deploy with Cloudflare** 按钮，Cloudflare 会自动 fork 仓库并跑 `wrangler deploy`。需要在 Dashboard 的 Worker Settings 里关联 KV 命名空间。
+
+### 命令行部署（推荐）
 
 ```bash
 git clone https://github.com/wangwangit/SubsTracker.git
 cd SubsTracker
-```
-
-> ⚠️ 必须进入包含 **package.json** 的项目目录后才能执行之后的 **npm install**。
-
-### 2) 安装 Node.js / npm
-
-如果你电脑里没有 `npm`：
-
-- 前往官网下载安装：<https://nodejs.org/>
-- 推荐安装 LTS 版本（安装后自动包含 npm）
-
-安装后验证：
-
-```bash
-node -v
-npm -v
-```
-
-### 3) 获取 Cloudflare API Token
-
-1. 打开 Cloudflare Dashboard → **My Profile** → **API Tokens**
-2. 点击 **Create Token**
-3. **强烈推荐**使用 Edit Cloudflare Workers 模版（Edit Cloudflare Workers）
-4. 权限至少包含：
-   - Workers Scripts: Edit
-   - Workers KV Storage: Edit
-5. Account Resources 选择你的目标账号
-6. 创建后复制 Token
-
-![image-20260227170420115](https://img.996007.icu/file/1772183075773_20260227170427274.png)
-
-> ⚠️ Token 只显示一次，请妥善保存；泄露后请立刻删除重建。
-
----
-
-## 🚀 部署方式（推荐）
-
-```bash
 npm install
+
+# 设置 Token
+# Linux/macOS:
+export CLOUDFLARE_API_TOKEN=你的token
 # Windows PowerShell:
 $env:CLOUDFLARE_API_TOKEN="你的token"
+
 npm run deploy:safe
 ```
 
-`deploy:safe` 会自动执行：
-1. `npm run setup`
-   - 检查是否已有 `SUBSCRIPTIONS_KV` / `SUBSCRIPTIONS_KV_PREVIEW`
-   - 若存在则复用原 ID
-   - 若不存在则自动创建
-   - 自动回写 `wrangler.toml`
-2. `npm run deploy`
-   - 执行部署到 Cloudflare Workers
+`deploy:safe` 自动执行：
+1. `npm run setup` — 检测/创建 `SUBSCRIPTIONS_KV` + `SUBSCRIPTIONS_KV_PREVIEW`，自动写入 `wrangler.toml`
+2. `npm run deploy` — `wrangler deploy`
 
-![image-20260227170513582](https://img.996007.icu/file/1772183123590_20260227170513797.png)
+### 默认凭据
 
-如果你是 Windows CMD：
+部署后首次登录：
+- 用户名：`admin`
+- 密码：`password`
 
-```bat
-set CLOUDFLARE_API_TOKEN=你的token
-npm run deploy:safe
-```
+**首次登录后请立即在系统配置中修改密码。**
+
+### 忘记密码
+
+到 Cloudflare Dashboard → Workers → KV → `SUBSCRIPTIONS_KV` → 编辑 `config` 这条记录的 JSON 中 `ADMIN_PASSWORD` 字段。
 
 ---
 
-## 🔄 已部署版本升级（保留原数据）
+## 🔄 升级到当前版本
 
-可以直接升级，且会优先复用原 KV：
+如果你已经在使用旧版本，直接执行：
 
 ```bash
 git pull
 npm install
-# Windows PowerShell:
-$env:CLOUDFLARE_API_TOKEN="你的token"
 npm run deploy:safe
 ```
 
-如需备份（可选）：
+第一次访问任意页面时，KV 数据会**自动迁移**到新结构（多 Key 拆分、提醒规则、可观测性日志）。旧 `subscriptions` 数据自动备份保留 7 天，可回滚。详见 [`docs/MIGRATION.md`](docs/MIGRATION.md)。
+
+> ⚠️ **如果你之前按 UTC 配置过 `NOTIFICATION_HOURS`**：升级后该字段改按你设置的 `TIMEZONE` 解释。请到配置页根据底部"实时预览"重新调整。
+
+---
+
+## 🛠 开发
 
 ```bash
-npx wrangler kv key get --binding=SUBSCRIPTIONS_KV --env="" --remote config > backup-config.json
-npx wrangler kv key get --binding=SUBSCRIPTIONS_KV --env="" --remote subscriptions > backup-subscriptions.json
+npm install
+npm test              # 跑 170+ 条单元测试
+npm run lint          # tsc 类型检查（用 JSDoc + // @ts-check）
+npm run test:watch    # watch 模式
+
+# 本地启动 dev 环境（独立的 miniflare KV，不影响生产数据）
+npx wrangler dev --config wrangler.dev.toml --local
+# 浏览器打开 http://127.0.0.1:8787，admin/password
 ```
 
----
+源码结构：
 
-## 🔐 首次部署登录说明
+```
+src/
+├── index.js              # Worker 入口（fetch + scheduled）
+├── app.js                # Hono 应用装配
+├── core/                 # 时间 / 农历 / 货币 / 认证
+├── data/                 # KV 仓库 + 自动迁移
+├── services/             # 调度器 + 通知（9 渠道适配器）
+├── api/                  # 路由 + handler + 中间件
+└── views/                # HTML 页面（text-import）
 
-部署完成后，访问你的 Worker 域名：
+public/                   # Workers Assets 静态资源
+└── js/lib/               # 共享前端库
 
-- 默认用户名：`admin`
-- 默认密码：`password`
+tests/                    # Vitest + workers-pool
+docs/                     # 文档（MIGRATION / ARCHITECTURE）
+```
 
-首次登录后请立即在系统配置中修改账号密码。
-
-## 忘记密码
-请前往CloudFlare的KV管理页面,修改KV SUBSCRIPTIONS_KV 下面的config中的内容即可!
-
----
-
-## 🔧 通知渠道配置
-
-### Telegram
-- **Bot Token**: 从 [@BotFather](https://t.me/BotFather) 获取
-- **Chat ID**: 从 [@userinfobot](https://t.me/userinfobot) 获取
-
-### NotifyX
-- **API Key**: 从 [NotifyX 官网](https://www.notifyx.cn/) 获取
-
-### 企业微信机器人
-- **推送 URL**: 参考 [官方文档](https://developer.work.weixin.qq.com/document/path/91770) 获取
-
-### Webhook 通知
-- **推送 URL**: 例如 `https://your-service.com/hooks/notify`
-- 支持自定义请求方法、请求头与消息模板
-- **模板占位符**：`{{title}}`、`{{content}}`、`{{tags}}`、`{{tagsLine}}`、`{{timestamp}}`、`{{formattedMessage}}`
-
-### Bark（iOS 推送）
-- **服务器地址**：默认 `https://api.day.app`，也可用自建服务器
-- **设备 Key**：在 Bark App 内复制
-- **历史记录**：勾选“保存推送”后可保留推送历史
-
-### Server酱
-- **SendKey**：从 [Server酱官网](https://sct.ftqq.com/) 获取
-- 使用 Server酱 3 接口发送 Markdown 格式通知
-
-### PushPlus
-- **Token**：从 [PushPlus 官网](https://www.pushplus.plus/) 获取
-- **Topic**：可选，配置后可发送到指定群组
-- **Channel**：可选，可在系统配置中选择默认、微信公众号、邮件、短信或 Webhook 渠道
-
-### 邮件通知 (Resend)
-- **API Key**: 从 [Resend 官方教程](https://developers.cloudflare.com/workers/tutorials/send-emails-with-resend/) 获取
-- **发件人邮箱**: 需为 Resend 已验证域名邮箱
-- **收件人邮箱**: 接收通知的邮箱
-
-### 🔔 通知时间与时区说明
-- 后端调度与计算统一使用 **UTC**
-- `notificationHours` 按 **UTC 小时**解释
-- 留空表示全天允许发送
-- 前端页面时间按“当前设备时区”显示
-
-### 🔐 第三方 API 安全调用
-- `POST /api/notify/{token}` 可触发系统通知
-- 令牌也支持 `Authorization: Bearer <token>` 或 `?token=<token>`
-- 未配置或令牌不匹配时接口会拒绝请求
+详细架构请见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
 ---
 
-## 🛠 常见问题排查
-
-### `Authentication error [code: 10000]`
-通常是本地 Wrangler 状态/缓存或 Token 权限问题。
-
-可按顺序处理：
+## 🔧 第三方 API 通知
 
 ```bash
-# PowerShell 重新设置 token
-$env:CLOUDFLARE_API_TOKEN="你的token"
-npm run deploy:safe
+curl -X POST https://your-domain.workers.dev/api/notify/YOUR_TOKEN \
+  -H "Content-Type: application/json" \
+  -d '{"title":"自定义标题","content":"消息正文","tags":["可选","标签"]}'
 ```
 
-若仍报错，清理本地 Wrangler 缓存后重试：
-
-- Windows: `C:\Users\<你的用户名>\AppData\Roaming\xdg.config\.wrangler\`
-
-删除目录后，重新设置 token 再执行部署。
+也可用 `Authorization: Bearer YOUR_TOKEN` 或 `?token=YOUR_TOKEN`。
 
 ---
 
-## 欢迎关注我的公众号
+## 🛠 常见问题
 
-![39d8d5a902fa1eee6cbbbc8a0dcff4b](https://github.com/user-attachments/assets/96bae085-4299-4377-9958-9a3a11294efc)
+### "为什么没收到通知？"
 
----
+1. 登录后访问 `/admin/notify-logs`，按订阅 / 状态 / 时间筛选——若有"failed"行，展开看具体错误
+2. 访问 `/debug`，看"时区诊断"区块——确认当前是否在通知窗口
+3. 如果"在窗口内但 sched_log status=ok 且 sentCount=0"，说明本次没命中任何提醒规则——检查订阅的"提醒规则"配置
 
-## 赞助
+### Authentication error [code: 10000]
 
-本项目 CDN 加速及安全防护由 Tencent EdgeOne 赞助：EdgeOne 提供长期有效的免费套餐，包含不限量流量和请求，覆盖中国大陆节点，且无超额收费。
-
-[[Best Asian CDN, Edge, and Secure Solutions - Tencent EdgeOne](https://edgeone.ai/?from=github)]
-
-[![image](https://edgeone.ai/media/34fe3a45-492d-4ea4-ae5d-ea1087ca7b4b.png)](https://edgeone.ai/media/34fe3a45-492d-4ea4-ae5d-ea1087ca7b4b.png)
+通常是 Wrangler 缓存或 Token 权限问题。重新设置 Token 后重试，仍报错则清理 `.wrangler/` 目录后再来。
 
 ---
 
-## 🤝 贡献
+## 🤝 贡献 / 协议
 
-欢迎贡献代码、报告问题或提出新功能建议。
+PR 欢迎，issue 也欢迎。代码风格：JSDoc 中文注释 + Vitest 单测。
+MIT License。
 
-## 📜 许可证
+---
 
-MIT License
+## 关注作者
 
-## Star History
+![image](https://github.com/user-attachments/assets/96bae085-4299-4377-9958-9a3a11294efc)
 
-[![Star History Chart](https://api.star-history.com/svg?repos=wangwangit/SubsTracker&type=Date)](https://www.star-history.com/#wangwangit/SubsTracker&Date)
+CDN 加速由 Tencent EdgeOne 赞助。

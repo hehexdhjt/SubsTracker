@@ -24,7 +24,7 @@ const DEFAULT_CONFIG = {
   BARK_IS_ARCHIVE: 'false',
   ENABLED_NOTIFIERS: ['notifyx'],
   THEME_MODE: 'system',
-  TIMEZONE: 'UTC',
+  TIMEZONE: 'Asia/Shanghai',
   NOTIFICATION_HOURS: [],
   THIRD_PARTY_API_TOKEN: '',
   DEBUG_LOGS: false,
