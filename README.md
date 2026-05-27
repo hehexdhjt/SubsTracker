@@ -1,7 +1,5 @@
 # SubsTracker — 订阅管理与提醒系统
 
-[![Deploy with Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/wangwangit/SubsTracker)
-
 基于 Cloudflare Workers 的轻量级订阅管理系统。跟踪所有订阅服务的到期时间，通过 Telegram、Bark、Webhook 等 9 种渠道发送可靠的多档位提醒，并提供完整的发送日志用于自助排查。
 
 ---
@@ -53,11 +51,7 @@
 
 ## 🚀 部署
 
-### 一键按钮
-
-点击页面顶部 **Deploy with Cloudflare** 按钮，Cloudflare 会自动 fork 仓库并跑 `wrangler deploy`。需要在 Dashboard 的 Worker Settings 里关联 KV 命名空间。
-
-### 命令行部署（推荐）
+### 方式一：命令行部署
 
 ```bash
 git clone https://github.com/wangwangit/SubsTracker.git
@@ -77,6 +71,17 @@ npm run deploy:safe
 1. `npm run setup` — 检测/创建 `SUBSCRIPTIONS_KV` + `SUBSCRIPTIONS_KV_PREVIEW`，自动写入 `wrangler.toml`
 2. `npm run deploy` — `wrangler deploy`
 
+### 方式二：GitHub Actions 自动部署
+
+Fork 本仓库后，在仓库 **Settings → Secrets and variables → Actions** 中添加：
+
+| Secret 名称 | 说明 |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API Token（需要 Workers 编辑 + KV 编辑权限） |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Account ID（可选，Token 已锁定账户时可省略） |
+
+配置完成后，每次 push 到 `master` 分支会自动运行测试并部署。也可在 GitHub Actions 页面手动触发 Deploy workflow。
+
 ### 默认凭据
 
 部署后首次登录：
@@ -91,9 +96,7 @@ npm run deploy:safe
 
 ---
 
-## 🔄 升级到当前版本
-
-如果你已经在使用旧版本，直接执行：
+## 🔄 升级
 
 ```bash
 git pull
@@ -101,7 +104,7 @@ npm install
 npm run deploy:safe
 ```
 
-第一次访问任意页面时，KV 数据会**自动迁移**到新结构（多 Key 拆分、提醒规则、可观测性日志）。旧 `subscriptions` 数据自动备份保留 7 天，可回滚。详见 [`docs/MIGRATION.md`](docs/MIGRATION.md)。
+首次访问时 KV 数据会**自动迁移**到新结构（多 Key 拆分、提醒规则、可观测性日志）。旧数据自动备份保留 7 天。
 
 > ⚠️ **如果你之前按 UTC 配置过 `NOTIFICATION_HOURS`**：升级后该字段改按你设置的 `TIMEZONE` 解释。请到配置页根据底部"实时预览"重新调整。
 
@@ -136,10 +139,7 @@ public/                   # Workers Assets 静态资源
 └── js/lib/               # 共享前端库
 
 tests/                    # Vitest + workers-pool
-docs/                     # 文档（MIGRATION / ARCHITECTURE）
 ```
-
-详细架构请见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
 ---
 
