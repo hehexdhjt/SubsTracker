@@ -236,6 +236,17 @@ function formatPartsAsIsoLocal(parts) {
 }
 
 /**
+ * 把日期分量拼成 "YYYY-MM-DD"。
+ *
+ * @param {{ year: number, month: number, day: number }} parts
+ * @returns {string}
+ */
+function formatPartsAsDateOnly(parts) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+}
+
+/**
  * 把 Date 转成 UTC ms 整数（兼容 Date 与时间戳）。
  *
  * @param {Date | number} d
@@ -243,6 +254,143 @@ function formatPartsAsIsoLocal(parts) {
  */
 function utcMillis(d) {
   return d instanceof Date ? d.getTime() : Number(d);
+}
+
+/**
+ * 根据目标时区下的本地日期分量，反推对应的 UTC 时间戳。
+ *
+ * @param {{ year: number, month: number, day: number, hour?: number, minute?: number, second?: number }} parts
+ * @param {string} [timezone='UTC']
+ * @returns {number}
+ */
+export function getTimestampForTimezoneParts(parts, timezone = 'UTC') {
+  const tz = safeTimezone(timezone);
+  const year = Number(parts.year);
+  const month = Number(parts.month);
+  const day = Number(parts.day);
+  const hour = Number(parts.hour || 0);
+  const minute = Number(parts.minute || 0);
+  const second = Number(parts.second || 0);
+
+  const probe = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  if (
+    Number.isNaN(probe.getTime()) ||
+    probe.getUTCFullYear() !== year ||
+    probe.getUTCMonth() + 1 !== month ||
+    probe.getUTCDate() !== day ||
+    probe.getUTCHours() !== hour ||
+    probe.getUTCMinutes() !== minute ||
+    probe.getUTCSeconds() !== second
+  ) {
+    return Number.NaN;
+  }
+
+  const t0 = probe.getTime();
+  const probeParts = getTimezoneDateParts(probe, tz);
+  const probeAsUtc = Date.UTC(
+    probeParts.year,
+    probeParts.month - 1,
+    probeParts.day,
+    probeParts.hour,
+    probeParts.minute,
+    probeParts.second
+  );
+  const offsetMs = probeAsUtc - t0;
+  return t0 - offsetMs;
+}
+
+/**
+ * 以指定时区的本地零点解释 "YYYY-MM-DD" 日期输入。
+ *
+ * 若输入是完整 ISO / 时间戳，则保持其绝对时刻语义直接解析。
+ *
+ * @param {Date | string | number} value
+ * @param {string} [timezone='UTC']
+ * @returns {Date}
+ */
+export function parseDateInputInTimezone(value, timezone = 'UTC') {
+  if (value instanceof Date) return new Date(value.getTime());
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    const match = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (match) {
+      const ts = getTimestampForTimezoneParts(
+        {
+          year: Number(match[1]),
+          month: Number(match[2]),
+          day: Number(match[3]),
+          hour: 0,
+          minute: 0,
+          second: 0
+        },
+        timezone
+      );
+      return new Date(ts);
+    }
+  }
+  return new Date(value);
+}
+
+/**
+ * 把某个时刻格式化为指定时区下的日期输入值 "YYYY-MM-DD"。
+ *
+ * @param {Date | string | number} value
+ * @param {string} [timezone='UTC']
+ * @returns {string}
+ */
+export function formatDateInputInTimezone(value, timezone = 'UTC') {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return formatPartsAsDateOnly(getTimezoneDateParts(d, timezone));
+}
+
+/**
+ * 获取指定时区下"今天"的 YYYY-MM-DD。
+ *
+ * @param {string} [timezone='UTC']
+ * @param {Date} [now]
+ * @returns {string}
+ */
+export function getTodayDateStringInTimezone(timezone = 'UTC', now) {
+  const current = getNowInTimezone(timezone, now);
+  return formatPartsAsDateOnly(current.parts);
+}
+
+/**
+ * 在指定时区的本地日期语义下增加日/月/年周期，并返回新时刻（本地零点）。
+ *
+ * @param {Date | string | number} value
+ * @param {number} amount
+ * @param {'day'|'month'|'year'} unit
+ * @param {string} [timezone='UTC']
+ * @returns {Date}
+ */
+export function addCalendarPeriodInTimezone(value, amount, unit, timezone = 'UTC') {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return new Date(Number.NaN);
+
+  const parts = getTimezoneDateParts(d, timezone);
+  const temp = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 0, 0, 0));
+  if (unit === 'day') {
+    temp.setUTCDate(temp.getUTCDate() + amount);
+  } else if (unit === 'month') {
+    temp.setUTCMonth(temp.getUTCMonth() + amount);
+  } else if (unit === 'year') {
+    temp.setUTCFullYear(temp.getUTCFullYear() + amount);
+  }
+
+  const ts = getTimestampForTimezoneParts(
+    {
+      year: temp.getUTCFullYear(),
+      month: temp.getUTCMonth() + 1,
+      day: temp.getUTCDate(),
+      hour: 0,
+      minute: 0,
+      second: 0
+    },
+    timezone
+  );
+  return new Date(ts);
 }
 
 /**

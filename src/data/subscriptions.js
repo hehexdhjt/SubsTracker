@@ -15,7 +15,13 @@
  */
 
 import { getConfig } from './config.js';
-import { getTimezoneMidnightTimestamp, getNowInTimezone } from '../core/time.js';
+import {
+  addCalendarPeriodInTimezone,
+  getNowInTimezone,
+  getTimezoneDateParts,
+  getTimezoneMidnightTimestamp,
+  parseDateInputInTimezone
+} from '../core/time.js';
 import { lunarCalendar, lunarBiz } from '../core/lunar.js';
 import { resolveReminderSetting } from '../services/notify/reminder.js';
 import * as subRepo from './subscriptions.repo.js';
@@ -38,6 +44,31 @@ function trimPaymentHistory(records = [], limit = 100) {
   const keptOther = otherRecords.slice(-(safeLimit - Math.min(initialRecords.length, 1)));
   const keptInitial = initialRecords.length > 0 ? [initialRecords[0]] : [];
   return [...keptInitial, ...keptOther];
+}
+
+/**
+ * @param {string | Date | number | null | undefined} value
+ * @param {string} timezone
+ * @returns {Date | null}
+ */
+function parseOptionalDateInTimezone(value, timezone) {
+  if (value == null || value === '') return null;
+  const parsed = parseDateInputInTimezone(value, timezone);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
+ * @param {number} year
+ * @param {number} month
+ * @param {number} day
+ * @param {string} timezone
+ * @returns {Date}
+ */
+function buildTimezoneDate(year, month, day, timezone) {
+  return parseDateInputInTimezone(
+    `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+    timezone
+  );
 }
 
 /**
@@ -78,54 +109,58 @@ async function createSubscription(subscription, env) {
       return { success: false, message: '缺少必填字段' };
     }
 
-    let expiryDate = new Date(subscription.expiryDate);
     const config = await getConfig(env);
     const timezone = config.TIMEZONE || 'Asia/Shanghai';
     const now = getNowInTimezone(timezone);
     const todayMidnight = getTimezoneMidnightTimestamp(now.utc, timezone);
+    const startDate = parseOptionalDateInTimezone(subscription.startDate, timezone);
+    let expiryDate = parseOptionalDateInTimezone(subscription.expiryDate, timezone);
+    if (!expiryDate) {
+      return { success: false, message: '到期日期格式无效' };
+    }
 
     let useLunar = !!subscription.useLunar;
     if (useLunar) {
+      const expiryParts = getTimezoneDateParts(expiryDate, timezone);
       let lunar = lunarCalendar.solar2lunar(
-        expiryDate.getFullYear(),
-        expiryDate.getMonth() + 1,
-        expiryDate.getDate()
+        expiryParts.year,
+        expiryParts.month,
+        expiryParts.day
       );
 
       if (lunar && subscription.periodValue && subscription.periodUnit) {
         while (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight) {
           lunar = lunarBiz.addLunarPeriod(lunar, subscription.periodValue, subscription.periodUnit);
           const solar = lunarBiz.lunar2solar(lunar);
-          expiryDate = new Date(solar.year, solar.month - 1, solar.day);
+          expiryDate = buildTimezoneDate(solar.year, solar.month, solar.day, timezone);
         }
-        subscription.expiryDate = expiryDate.toISOString();
       }
     } else {
       if (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight && subscription.periodValue && subscription.periodUnit) {
         while (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight) {
-          if (subscription.periodUnit === 'day') {
-            expiryDate.setDate(expiryDate.getDate() + subscription.periodValue);
-          } else if (subscription.periodUnit === 'month') {
-            expiryDate.setMonth(expiryDate.getMonth() + subscription.periodValue);
-          } else if (subscription.periodUnit === 'year') {
-            expiryDate.setFullYear(expiryDate.getFullYear() + subscription.periodValue);
-          }
+          expiryDate = addCalendarPeriodInTimezone(
+            expiryDate,
+            subscription.periodValue,
+            subscription.periodUnit,
+            timezone
+          );
         }
-        subscription.expiryDate = expiryDate.toISOString();
       }
     }
 
     const reminderSetting = resolveReminderSetting(subscription);
+    const normalizedStartDate = startDate ? startDate.toISOString() : null;
+    const normalizedExpiryDate = expiryDate.toISOString();
 
-    const initialPaymentDate = subscription.startDate || now.utc.toISOString();
+    const initialPaymentDate = normalizedStartDate || now.utc.toISOString();
     const newSubscription = {
       id: Date.now().toString(),
       name: subscription.name,
       subscriptionMode: subscription.subscriptionMode || 'cycle',
       customType: subscription.customType || '',
       category: subscription.category ? subscription.category.trim() : '',
-      startDate: subscription.startDate || null,
-      expiryDate: subscription.expiryDate,
+      startDate: normalizedStartDate,
+      expiryDate: normalizedExpiryDate,
       periodValue: subscription.periodValue || 1,
       periodUnit: subscription.periodUnit || 'month',
       reminderUnit: reminderSetting.unit,
@@ -149,8 +184,8 @@ async function createSubscription(subscription, env) {
                 currency: subscription.currency || 'CNY',
                 type: 'initial',
                 note: '初始订阅',
-                periodStart: subscription.startDate || initialPaymentDate,
-                periodEnd: subscription.expiryDate
+                periodStart: normalizedStartDate || initialPaymentDate,
+                periodEnd: normalizedExpiryDate
               }
             ]
           : [],
@@ -188,18 +223,23 @@ async function updateSubscription(id, subscription, env) {
       return { success: false, message: '缺少必填字段' };
     }
 
-    let expiryDate = new Date(subscription.expiryDate);
     const config = await getConfig(env);
     const timezone = config.TIMEZONE || 'Asia/Shanghai';
     const now = getNowInTimezone(timezone);
     const todayMidnight = getTimezoneMidnightTimestamp(now.utc, timezone);
+    const incomingStartDate = parseOptionalDateInTimezone(subscription.startDate, timezone);
+    let expiryDate = parseOptionalDateInTimezone(subscription.expiryDate, timezone);
+    if (!expiryDate) {
+      return { success: false, message: '到期日期格式无效' };
+    }
 
     let useLunar = !!subscription.useLunar;
     if (useLunar) {
+      const expiryParts = getTimezoneDateParts(expiryDate, timezone);
       let lunar = lunarCalendar.solar2lunar(
-        expiryDate.getFullYear(),
-        expiryDate.getMonth() + 1,
-        expiryDate.getDate()
+        expiryParts.year,
+        expiryParts.month,
+        expiryParts.day
       );
       if (!lunar) {
         return { success: false, message: '农历日期超出支持范围（1900-2100年）' };
@@ -208,22 +248,19 @@ async function updateSubscription(id, subscription, env) {
         do {
           lunar = lunarBiz.addLunarPeriod(lunar, subscription.periodValue, subscription.periodUnit);
           const solar = lunarBiz.lunar2solar(lunar);
-          expiryDate = new Date(solar.year, solar.month - 1, solar.day);
+          expiryDate = buildTimezoneDate(solar.year, solar.month, solar.day, timezone);
         } while (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight);
-        subscription.expiryDate = expiryDate.toISOString();
       }
     } else {
       if (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight && subscription.periodValue && subscription.periodUnit) {
         while (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight) {
-          if (subscription.periodUnit === 'day') {
-            expiryDate.setDate(expiryDate.getDate() + subscription.periodValue);
-          } else if (subscription.periodUnit === 'month') {
-            expiryDate.setMonth(expiryDate.getMonth() + subscription.periodValue);
-          } else if (subscription.periodUnit === 'year') {
-            expiryDate.setFullYear(expiryDate.getFullYear() + subscription.periodValue);
-          }
+          expiryDate = addCalendarPeriodInTimezone(
+            expiryDate,
+            subscription.periodValue,
+            subscription.periodUnit,
+            timezone
+          );
         }
-        subscription.expiryDate = expiryDate.toISOString();
       }
     }
 
@@ -265,8 +302,13 @@ async function updateSubscription(id, subscription, env) {
         subscription.category !== undefined
           ? subscription.category.trim()
           : existing.category || '',
-      startDate: subscription.startDate || existing.startDate,
-      expiryDate: subscription.expiryDate,
+      startDate:
+        subscription.startDate !== undefined
+          ? incomingStartDate
+            ? incomingStartDate.toISOString()
+            : existing.startDate
+          : existing.startDate,
+      expiryDate: expiryDate.toISOString(),
       periodValue: subscription.periodValue || existing.periodValue || 1,
       periodUnit: subscription.periodUnit || existing.periodUnit || 'month',
       reminderUnit: reminderSetting.unit,
@@ -345,7 +387,9 @@ async function manualRenewSubscription(id, env, options = {}) {
     const timezone = config.TIMEZONE || 'Asia/Shanghai';
     const now = getNowInTimezone(timezone);
 
-    const paymentDate = options.paymentDate ? new Date(options.paymentDate) : now.utc;
+    const paymentDate = options.paymentDate
+      ? parseDateInputInTimezone(options.paymentDate, timezone)
+      : now.utc;
     const amount = options.amount !== undefined ? options.amount : subscription.amount || 0;
     const periodMultiplier = options.periodMultiplier || 1;
     const note = options.note || '手动续订';
@@ -365,28 +409,22 @@ async function manualRenewSubscription(id, env, options = {}) {
 
     let newExpiryDate;
     if (subscription.useLunar) {
-      const solarStart = {
-        year: newStartDate.getFullYear(),
-        month: newStartDate.getMonth() + 1,
-        day: newStartDate.getDate()
-      };
+      const solarStart = getTimezoneDateParts(newStartDate, timezone);
       let lunar = lunarCalendar.solar2lunar(solarStart.year, solarStart.month, solarStart.day);
       let nextLunar = lunar;
       for (let i = 0; i < periodMultiplier; i++) {
         nextLunar = lunarBiz.addLunarPeriod(nextLunar, subscription.periodValue, subscription.periodUnit);
       }
       const solar = lunarBiz.lunar2solar(nextLunar);
-      newExpiryDate = new Date(solar.year, solar.month - 1, solar.day);
+      newExpiryDate = buildTimezoneDate(solar.year, solar.month, solar.day, timezone);
     } else {
-      newExpiryDate = new Date(newStartDate);
       const totalPeriodValue = subscription.periodValue * periodMultiplier;
-      if (subscription.periodUnit === 'day') {
-        newExpiryDate.setDate(newExpiryDate.getDate() + totalPeriodValue);
-      } else if (subscription.periodUnit === 'month') {
-        newExpiryDate.setMonth(newExpiryDate.getMonth() + totalPeriodValue);
-      } else if (subscription.periodUnit === 'year') {
-        newExpiryDate.setFullYear(newExpiryDate.getFullYear() + totalPeriodValue);
-      }
+      newExpiryDate = addCalendarPeriodInTimezone(
+        newStartDate,
+        totalPeriodValue,
+        subscription.periodUnit,
+        timezone
+      );
     }
 
     const paymentRecord = {
@@ -495,14 +533,18 @@ async function updatePaymentRecord(subscriptionId, paymentId, paymentData, env) 
   try {
     const subscription = await subRepo.getById(env, subscriptionId);
     if (!subscription) return { success: false, message: '订阅不存在' };
+    const config = await getConfig(env);
+    const timezone = config.TIMEZONE || 'Asia/Shanghai';
 
     const paymentHistory = subscription.paymentHistory || [];
     const paymentIndex = paymentHistory.findIndex((p) => p.id === paymentId);
     if (paymentIndex === -1) return { success: false, message: '支付记录不存在' };
 
+    const normalizedPaymentDate = parseOptionalDateInTimezone(paymentData.date, timezone);
+
     paymentHistory[paymentIndex] = {
       ...paymentHistory[paymentIndex],
-      date: paymentData.date || paymentHistory[paymentIndex].date,
+      date: normalizedPaymentDate ? normalizedPaymentDate.toISOString() : paymentHistory[paymentIndex].date,
       amount:
         paymentData.amount !== undefined ? paymentData.amount : paymentHistory[paymentIndex].amount,
       currency:
