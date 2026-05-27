@@ -7,7 +7,7 @@
   "scripts": {
     "build": "echo 'No build step required for Workers runtime'",
     "setup": "node scripts/setup-kv.cjs",
-    "deploy": "npx wrangler deploy --env=\"\"",
+    "deploy": "npx wrangler deploy",
     "deploy:safe": "npm run setup && npm run deploy",
     "lint": "tsc --noEmit -p jsconfig.json",
     "test": "vitest run",
