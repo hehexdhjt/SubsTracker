@@ -9,3 +9,12 @@ coverage/
 # 本地调研与草稿，不入库
 优化文档/
 CHANGELOG-TEST.md
+
+# AI 工具本地配置
+.codex/
+.agents/
+
+# 环境变量
+.env
+.env.*
+.dev.vars

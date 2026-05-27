@@ -58,6 +58,7 @@ async function testSingleSubscriptionNotification(id, env) {
 
     const tags = extractTagsFromSubscriptions([subscription]);
     const notifyResult = await sendNotificationToAllChannels(title, commonContent, config, '[手动测试]', {
+      env, subId: id, ruleId: 'manual-test',
       metadata: { tags }
     });
 

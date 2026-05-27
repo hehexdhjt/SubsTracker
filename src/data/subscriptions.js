@@ -279,18 +279,29 @@ async function updateSubscription(id, subscription, env) {
     const newAmount = subscription.amount !== undefined ? subscription.amount : existing.amount;
     let paymentHistory = existing.paymentHistory || [];
 
-    if (
-      newAmount !== existing.amount ||
-      (subscription.currency !== undefined && subscription.currency !== existing.currency)
-    ) {
-      const initialPaymentIndex = paymentHistory.findIndex((p) => p.type === 'initial');
-      if (initialPaymentIndex !== -1) {
-        paymentHistory[initialPaymentIndex] = {
-          ...paymentHistory[initialPaymentIndex],
-          amount: newAmount,
-          currency: subscription.currency || existing.currency || 'CNY'
-        };
-      }
+    const hasInitialPayment = paymentHistory.some((p) => p.type === 'initial');
+    const amountChanged = newAmount !== existing.amount ||
+      (subscription.currency !== undefined && subscription.currency !== existing.currency);
+
+    if (amountChanged && hasInitialPayment) {
+      const idx = paymentHistory.findIndex((p) => p.type === 'initial');
+      paymentHistory[idx] = {
+        ...paymentHistory[idx],
+        amount: newAmount,
+        currency: subscription.currency || existing.currency || 'CNY'
+      };
+    } else if (!hasInitialPayment && newAmount !== null && newAmount !== undefined && newAmount > 0) {
+      const initialDate = existing.startDate || existing.createdAt || new Date().toISOString();
+      paymentHistory.unshift({
+        id: Date.now().toString(),
+        date: initialDate,
+        amount: newAmount,
+        currency: subscription.currency || existing.currency || 'CNY',
+        type: 'initial',
+        note: '初始订阅',
+        periodStart: existing.startDate || initialDate,
+        periodEnd: existing.expiryDate || initialDate
+      });
     }
 
     const merged = {
