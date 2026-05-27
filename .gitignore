@@ -1,7 +1,6 @@
 node_modules/
 .wrangler/
 .codeflicker/
-package-lock.json
 dist/
 coverage/
 .DS_Store
