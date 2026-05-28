@@ -22,17 +22,41 @@ function listNamespaces() {
   return Array.isArray(parsed) ? parsed : [];
 }
 
+function readWorkerName() {
+  const content = fs.readFileSync(WRANGLER_TOML, 'utf8');
+  const lines = content.split(/\r?\n/);
+
+  for (const line of lines) {
+    if (/^\s*\[/.test(line)) break;
+
+    const match = line.match(/^\s*name\s*=\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))\s*(?:#.*)?$/);
+    if (match) return match[1] || match[2] || match[3];
+  }
+
+  return null;
+}
+
+function namespaceTitlesFor(title) {
+  const workerName = readWorkerName();
+  return workerName ? [title, `${workerName}-${title}`] : [title];
+}
+
+function findNamespace(namespaces, title) {
+  const expectedTitles = namespaceTitlesFor(title);
+  return namespaces.find(ns => expectedTitles.includes(ns.title));
+}
+
 function ensureNamespace(title) {
   let namespaces = listNamespaces();
-  // Wrangler v3 会自动加项目名前缀，兼容两种命名方式
-  let found = namespaces.find(ns => ns.title === title || ns.title.endsWith(`-${title}`));
+  // Wrangler 会用项目名作为 namespace title 前缀；只匹配当前项目，避免误用其他 Worker 的同名 binding。
+  let found = findNamespace(namespaces, title);
   if (found && found.id) return found;
 
   console.log(`[setup-kv] Namespace ${title} 不存在，开始创建...`);
   run(`npx wrangler kv namespace create ${title}`);
 
   namespaces = listNamespaces();
-  found = namespaces.find(ns => ns.title === title);
+  found = findNamespace(namespaces, title);
   if (!found || !found.id) {
     throw new Error(`创建失败：未找到 namespace ${title}`);
   }
@@ -66,7 +90,7 @@ function main() {
   let preview = null;
   const namespaces = listNamespaces();
   for (const name of PREVIEW_TITLE_CANDIDATES) {
-    preview = namespaces.find(ns => ns.title === name);
+    preview = findNamespace(namespaces, name);
     if (preview && preview.id) break;
   }
   if (!preview || !preview.id) {
