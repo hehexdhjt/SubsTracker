@@ -24,7 +24,8 @@ function listNamespaces() {
 
 function ensureNamespace(title) {
   let namespaces = listNamespaces();
-  let found = namespaces.find(ns => ns.title === title);
+  // Wrangler v3 会自动加项目名前缀，兼容两种命名方式
+  let found = namespaces.find(ns => ns.title === title || ns.title.endsWith(`-${title}`));
   if (found && found.id) return found;
 
   console.log(`[setup-kv] Namespace ${title} 不存在，开始创建...`);
