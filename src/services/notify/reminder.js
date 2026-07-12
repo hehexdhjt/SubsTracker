@@ -1,6 +1,19 @@
-import { formatTimeInTimezone, formatTimezoneDisplay } from '../../core/time.js';
+import { formatTimeInTimezone, formatTimezoneDisplay, getTimezoneDateParts } from '../../core/time.js';
 import { lunarCalendar } from '../../core/lunar.js';
 import { formatAmount } from '../../core/currency-format.js';
+
+/**
+ * 按用户时区把到期日转成农历展示文案，避免用 Date 本地分量导致差一天。
+ *
+ * @param {Date | string | number} expiry
+ * @param {string} timezone
+ * @returns {string} 空串表示无法转换或不展示
+ */
+function formatLunarExpiryText(expiry, timezone) {
+  const parts = getTimezoneDateParts(expiry, timezone || 'UTC');
+  const lunarExpiry = lunarCalendar.solar2lunar(parts.year, parts.month, parts.day);
+  return lunarExpiry ? `\n农历日期: ${lunarExpiry.fullStr}` : '';
+}
 
 function resolveReminderSetting(subscription) {
   const defaultDays = subscription && subscription.reminderDays !== undefined ? Number(subscription.reminderDays) : 7;
@@ -64,8 +77,7 @@ function formatNotificationContent(subscriptions, config) {
 
     let lunarExpiryText = '';
     if (showLunar) {
-      const lunarExpiry = lunarCalendar.solar2lunar(expiryDateObj.getFullYear(), expiryDateObj.getMonth() + 1, expiryDateObj.getDate());
-      lunarExpiryText = lunarExpiry ? `\n农历日期: ${lunarExpiry.fullStr}` : '';
+      lunarExpiryText = formatLunarExpiryText(expiryDateObj, timezone);
     }
 
     let statusText = '';

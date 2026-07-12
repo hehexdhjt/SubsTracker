@@ -12,7 +12,7 @@ import {
 import { getConfig } from '../../data/config.js';
 import { sendNotificationToAllChannels } from '../../services/notify/index.js';
 import { lunarCalendar } from '../../core/lunar.js';
-import { formatTimeInTimezone, formatTimezoneDisplay } from '../../core/time.js';
+import { formatTimeInTimezone, formatTimezoneDisplay, getTimezoneDateParts } from '../../core/time.js';
 import { formatAmount } from '../../core/currency-format.js';
 import { extractTagsFromSubscriptions } from '../utils.js';
 
@@ -30,8 +30,9 @@ async function testSingleSubscriptionNotification(id, env) {
     let lunarExpiryText = '';
 
     if (showLunar) {
-      const expiryDateObj = new Date(subscription.expiryDate);
-      const lunarExpiry = lunarCalendar.solar2lunar(expiryDateObj.getFullYear(), expiryDateObj.getMonth() + 1, expiryDateObj.getDate());
+      const timezoneForLunar = config?.TIMEZONE || 'UTC';
+      const expiryParts = getTimezoneDateParts(subscription.expiryDate, timezoneForLunar);
+      const lunarExpiry = lunarCalendar.solar2lunar(expiryParts.year, expiryParts.month, expiryParts.day);
       lunarExpiryText = lunarExpiry ? ` (农历: ${lunarExpiry.fullStr})` : '';
     }
 
