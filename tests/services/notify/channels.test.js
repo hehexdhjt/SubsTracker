@@ -317,9 +317,9 @@ describe('testChannel', () => {
 });
 
 describe('注册表完整性', () => {
-  it('ALL_CHANNELS 包含 9 个渠道', () => {
+  it('ALL_CHANNELS 包含 10 个渠道', () => {
     expect(Object.keys(ALL_CHANNELS).sort()).toEqual(
-      ['bark', 'email', 'gotify', 'notifyx', 'pushplus', 'serverchan', 'telegram', 'webhook', 'wechatbot'].sort()
+      ['bark', 'email', 'gotify', 'notifyx', 'ntfy', 'pushplus', 'serverchan', 'telegram', 'webhook', 'wechatbot'].sort()
     );
   });
 
@@ -329,6 +329,35 @@ describe('注册表完整性', () => {
       expect(typeof ch.validateConfig).toBe('function');
       expect(typeof ch.send).toBe('function');
       expect(typeof ch.test).toBe('function');
+    }
+  });
+});
+
+
+import { ntfyChannel } from '../../../src/services/notify/ntfy.js';
+
+describe('ntfyChannel', () => {
+  it('validateConfig：缺 topic 失败', () => {
+    expect(ntfyChannel.validateConfig({}).ok).toBe(false);
+  });
+
+  it('send 成功路径', async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = async (url, init) => {
+      expect(String(url)).toContain('https://ntfy.sh/my-topic');
+      expect(init.method).toBe('POST');
+      expect(init.headers.Title).toBeTruthy();
+      return { ok: true, json: async () => ({ id: '1' }), text: async () => '' };
+    };
+    try {
+      const r = await ntfyChannel.send(
+        { title: 't', content: 'c' },
+        { NTFY_SERVER: 'https://ntfy.sh', NTFY_TOPIC: 'my-topic' }
+      );
+      expect(r.success).toBe(true);
+      expect(r.channel).toBe('ntfy');
+    } finally {
+      globalThis.fetch = original;
     }
   });
 });

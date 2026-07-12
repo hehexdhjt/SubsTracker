@@ -18,6 +18,7 @@ import { barkChannel } from './bark.js';
 import { gotifyChannel } from './gotify.js';
 import { serverChanChannel } from './serverchan.js';
 import { pushplusChannel } from './pushplus.js';
+import { ntfyChannel } from './ntfy.js';
 import { writeLog } from '../../data/notification-logs.repo.js';
 
 /** 名字到渠道实例的映射；新增渠道在此注册即可 */
@@ -30,7 +31,8 @@ export const ALL_CHANNELS = {
   bark: barkChannel,
   gotify: gotifyChannel,
   serverchan: serverChanChannel,
-  pushplus: pushplusChannel
+  pushplus: pushplusChannel,
+  ntfy: ntfyChannel
 };
 
 /**

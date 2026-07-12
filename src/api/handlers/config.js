@@ -13,7 +13,8 @@ const SECRET_FIELDS = [
   'THIRD_PARTY_API_TOKEN',
   'GOTIFY_APP_TOKEN',
   'SERVERCHAN_SENDKEY',
-  'PUSHPLUS_TOKEN'
+  'PUSHPLUS_TOKEN',
+  'NTFY_TOKEN'
 ];
 
 function isConfiguredSecret(value) {
@@ -116,6 +117,10 @@ async function handleUpdateConfig(request, env) {
       PUSHPLUS_TOKEN: mergeSecretField(config, newConfig, 'PUSHPLUS_TOKEN', clearSecretFields),
       PUSHPLUS_TOPIC: (newConfig.PUSHPLUS_TOPIC || '').trim(),
       PUSHPLUS_CHANNEL: (newConfig.PUSHPLUS_CHANNEL || '').trim(),
+
+      NTFY_SERVER: (newConfig.NTFY_SERVER || 'https://ntfy.sh').trim() || 'https://ntfy.sh',
+      NTFY_TOPIC: (newConfig.NTFY_TOPIC || '').trim(),
+      NTFY_TOKEN: mergeSecretField(config, newConfig, 'NTFY_TOKEN', clearSecretFields),
 
       ENABLED_NOTIFIERS: newConfig.ENABLED_NOTIFIERS || ['notifyx'],
       TIMEZONE: newConfig.TIMEZONE || config.TIMEZONE || 'UTC',

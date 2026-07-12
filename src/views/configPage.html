@@ -267,6 +267,10 @@
                 <span class="ml-2 text-sm text-gray-700">Server酱</span>
               </label>
               <label class="inline-flex items-center">
+                <input type="checkbox" name="enabledNotifiers" value="ntfy" class="form-checkbox h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                <span class="ml-2 text-sm text-gray-700">ntfy</span>
+              </label>
+              <label class="inline-flex items-center">
                 <input type="checkbox" name="enabledNotifiers" value="pushplus" class="form-checkbox h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
                 <span class="ml-2 text-sm text-gray-700">PushPlus</span>
               </label>
@@ -562,7 +566,38 @@
             </div>
           </div>
 
-          <div id="serverchanConfig" class="config-section">
+          
+          <div id="ntfyConfig" class="config-section">
+            <h4 class="text-md font-medium text-gray-900 mb-3">ntfy 配置</h4>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label for="ntfyServer" class="block text-sm font-medium text-gray-700">Server URL</label>
+                <input type="url" id="ntfyServer" placeholder="https://ntfy.sh" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                <p class="mt-1 text-sm text-gray-500">公共服务器可用 https://ntfy.sh，也可填自建地址。</p>
+              </div>
+              <div>
+                <label for="ntfyTopic" class="block text-sm font-medium text-gray-700">Topic（主题）</label>
+                <input type="text" id="ntfyTopic" placeholder="例如 my-substracker-alerts" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+              </div>
+              <div class="md:col-span-2">
+                <label for="ntfyToken" class="block text-sm font-medium text-gray-700">Access Token（可选）</label>
+                <div class="mt-1 flex flex-col sm:flex-row sm:items-center gap-3">
+                  <input type="text" id="ntfyToken" placeholder="留空表示不修改；受保护主题时填写" class="flex-1 border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                  <button type="button" id="clearNtfyToken" class="btn-warning text-white px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap">
+                    <i class="fas fa-eraser mr-2"></i>清空
+                  </button>
+                </div>
+                <p id="NTFY_TOKENStatus" class="mt-1 text-xs text-gray-500">加载中...</p>
+              </div>
+            </div>
+            <div class="flex justify-end">
+              <button type="button" id="testNtfyBtn" class="btn-secondary text-white px-4 py-2 rounded-md text-sm font-medium">
+                <i class="fas fa-paper-plane mr-2"></i>测试 ntfy 通知
+              </button>
+            </div>
+          </div>
+
+<div id="serverchanConfig" class="config-section">
             <h4 class="text-md font-medium text-gray-900 mb-3">Server酱 配置</h4>
             <div class="grid grid-cols-1 gap-4 mb-4">
               <div>
@@ -802,6 +837,8 @@
         document.getElementById('barkServer').value = config.BARK_SERVER || 'https://api.day.app';
         document.getElementById('barkIsArchive').checked = config.BARK_IS_ARCHIVE === 'true';
         document.getElementById('gotifyServerUrl').value = config.GOTIFY_SERVER_URL || '';
+        if (document.getElementById('ntfyServer')) document.getElementById('ntfyServer').value = config.NTFY_SERVER || 'https://ntfy.sh';
+        if (document.getElementById('ntfyTopic')) document.getElementById('ntfyTopic').value = config.NTFY_TOPIC || '';
         document.getElementById('pushplusTopic').value = config.PUSHPLUS_TOPIC || '';
         document.getElementById('pushplusChannel').value = config.PUSHPLUS_CHANNEL || '';
 
@@ -828,6 +865,7 @@
           BARK_DEVICE_KEY: config.BARK_DEVICE_KEY_CONFIGURED === true,
           THIRD_PARTY_API_TOKEN: config.THIRD_PARTY_API_TOKEN_CONFIGURED === true,
           GOTIFY_APP_TOKEN: config.GOTIFY_APP_TOKEN_CONFIGURED === true,
+          NTFY_TOKEN: config.NTFY_TOKEN_CONFIGURED === true,
           SERVERCHAN_SENDKEY: config.SERVERCHAN_SENDKEY_CONFIGURED === true,
           PUSHPLUS_TOKEN: config.PUSHPLUS_TOKEN_CONFIGURED === true
         };
@@ -928,6 +966,7 @@
     
     function toggleNotificationConfigs(enabledNotifiers) {
       const telegramConfig = document.getElementById('telegramConfig');
+      const ntfyConfig = document.getElementById('ntfyConfig');
       const notifyxConfig = document.getElementById('notifyxConfig');
       const webhookConfig = document.getElementById('webhookConfig');
       const wechatbotConfig = document.getElementById('wechatbotConfig');
@@ -938,7 +977,7 @@
       const pushplusConfig = document.getElementById('pushplusConfig');
 
       // 重置所有配置区域
-      [telegramConfig, notifyxConfig, webhookConfig, wechatbotConfig, emailConfig, barkConfig, gotifyConfig, serverchanConfig, pushplusConfig].forEach(config => {
+      [telegramConfig, notifyxConfig, webhookConfig, wechatbotConfig, emailConfig, barkConfig, gotifyConfig, serverchanConfig, pushplusConfig, ntfyConfig].forEach(config => {
         config.classList.remove('active', 'inactive');
         config.classList.add('inactive');
       });
@@ -966,6 +1005,9 @@
         } else if (type === 'gotify') {
           gotifyConfig.classList.remove('inactive');
           gotifyConfig.classList.add('active');
+        } else if (type === 'ntfy' && ntfyConfig) {
+          ntfyConfig.classList.remove('inactive');
+          ntfyConfig.classList.add('active');
         } else if (type === 'serverchan') {
           serverchanConfig.classList.remove('inactive');
           serverchanConfig.classList.add('active');
@@ -1029,6 +1071,9 @@
         GOTIFY_SERVER_URL: document.getElementById('gotifyServerUrl').value.trim(),
         PUSHPLUS_TOPIC: document.getElementById('pushplusTopic').value.trim(),
         PUSHPLUS_CHANNEL: document.getElementById('pushplusChannel').value.trim(),
+        NTFY_SERVER: (document.getElementById('ntfyServer') && document.getElementById('ntfyServer').value.trim()) || 'https://ntfy.sh',
+        NTFY_TOPIC: (document.getElementById('ntfyTopic') && document.getElementById('ntfyTopic').value.trim()) || '',
+        NTFY_TOKEN: (document.getElementById('ntfyToken') && document.getElementById('ntfyToken').value.trim()) || '',
         ENABLED_NOTIFIERS: enabledNotifiers,
         TIMEZONE: document.getElementById('timezone').value.trim(),
 
@@ -1111,7 +1156,8 @@
                       type === 'bark' ? 'testBarkBtn' :
                       type === 'gotify' ? 'testGotifyBtn' :
                       type === 'serverchan' ? 'testServerchanBtn' :
-                      type === 'pushplus' ? 'testPushplusBtn' : 'testWebhookBtn';
+                      type === 'pushplus' ? 'testPushplusBtn' :
+        type === 'ntfy' ? 'testNtfyBtn' : 'testWebhookBtn';
       const button = document.getElementById(buttonId);
       if (!button) {
         showToast('测试按钮不存在，请刷新页面后重试', 'error');
@@ -1125,7 +1171,8 @@
                           type === 'bark' ? 'Bark' :
                           type === 'gotify' ? 'Gotify' :
                           type === 'serverchan' ? 'Server酱' :
-                          type === 'pushplus' ? 'PushPlus' : 'Webhook 通知';
+                          type === 'pushplus' ? 'PushPlus' :
+        type === 'ntfy' ? 'ntfy' : 'Webhook 通知';
 
       button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>测试中...';
       button.disabled = true;
@@ -1251,6 +1298,13 @@
       testNotification('pushplus');
     });
 
+    const testNtfyBtn = document.getElementById('testNtfyBtn');
+    if (testNtfyBtn) {
+      testNtfyBtn.addEventListener('click', () => {
+        testNotification('ntfy');
+      });
+    }
+
     document.getElementById('generateThirdPartyToken').addEventListener('click', () => {
       try {
         // 生成 32 位随机令牌，避免出现特殊字符，方便写入 URL
@@ -1279,6 +1333,7 @@
       wireSecretInput('barkDeviceKey', 'BARK_DEVICE_KEY');
       wireSecretInput('thirdPartyToken', 'THIRD_PARTY_API_TOKEN');
       wireSecretInput('gotifyAppToken', 'GOTIFY_APP_TOKEN');
+      if (document.getElementById('ntfyToken')) wireSecretInput('ntfyToken', 'NTFY_TOKEN');
       wireSecretInput('serverchanSendKey', 'SERVERCHAN_SENDKEY');
       wireSecretInput('pushplusToken', 'PUSHPLUS_TOKEN');
 
@@ -1291,6 +1346,7 @@
       wireClearSecretButton('clearBarkDeviceKey', 'barkDeviceKey', 'BARK_DEVICE_KEY');
       wireClearSecretButton('clearThirdPartyToken', 'thirdPartyToken', 'THIRD_PARTY_API_TOKEN');
       wireClearSecretButton('clearGotifyAppToken', 'gotifyAppToken', 'GOTIFY_APP_TOKEN');
+      if (document.getElementById('clearNtfyToken')) wireClearSecretButton('clearNtfyToken', 'ntfyToken', 'NTFY_TOKEN');
       wireClearSecretButton('clearServerchanSendKey', 'serverchanSendKey', 'SERVERCHAN_SENDKEY');
       wireClearSecretButton('clearPushplusToken', 'pushplusToken', 'PUSHPLUS_TOKEN');
 

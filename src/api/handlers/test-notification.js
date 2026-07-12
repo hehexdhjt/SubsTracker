@@ -9,6 +9,7 @@ import { sendBarkNotification } from '../../services/notify/bark.js';
 import { sendGotifyNotification } from '../../services/notify/gotify.js';
 import { sendServerChanNotification } from '../../services/notify/serverchan.js';
 import { sendPushPlusNotification } from '../../services/notify/pushplus.js';
+import { sendNtfyNotification } from '../../services/notify/ntfy.js';
 
 async function handleTestNotification(request, env) {
   try {
@@ -18,7 +19,7 @@ async function handleTestNotification(request, env) {
     let message = '';
 
     const type = typeof body.type === 'string' ? body.type.trim() : '';
-    const supportedTypes = ['telegram', 'notifyx', 'webhook', 'wechatbot', 'email', 'bark', 'gotify', 'serverchan', 'pushplus'];
+    const supportedTypes = ['telegram', 'notifyx', 'webhook', 'wechatbot', 'email', 'bark', 'gotify', 'serverchan', 'pushplus', 'ntfy'];
 
     if (!type) {
       return new Response(
@@ -166,6 +167,19 @@ async function handleTestNotification(request, env) {
 
       success = await sendPushPlusNotification(title, content, testConfig);
       message = success ? 'PushPlus通知发送成功' : 'PushPlus通知发送失败，请检查配置';
+    } else if (type === 'ntfy') {
+      const testConfig = {
+        ...config,
+        NTFY_SERVER: body.NTFY_SERVER || config.NTFY_SERVER,
+        NTFY_TOPIC: body.NTFY_TOPIC || config.NTFY_TOPIC,
+        NTFY_TOKEN: (typeof body.NTFY_TOKEN === 'string' && body.NTFY_TOKEN.trim().length > 0)
+          ? body.NTFY_TOKEN.trim()
+          : config.NTFY_TOKEN
+      };
+      const title = '测试通知';
+      const content = '这是一条测试通知，用于验证 ntfy 通知功能是否正常工作。\n\n发送时间: ' + formatBeijingTime();
+      success = await sendNtfyNotification(title, content, testConfig);
+      message = success ? 'ntfy 通知发送成功' : 'ntfy 通知发送失败，请检查配置';
     }
 
     return new Response(
