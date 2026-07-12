@@ -97,10 +97,11 @@ async function handleSubscriptions(request, env, path) {
     if (method === 'POST') {
       const subscription = await request.json();
       const result = await createSubscription(subscription, env);
-      // 本次：创建成功后写入提醒规则
+      // 创建成功后写入提醒规则，并同步 legacy 提醒字段（列表展示依赖）
       if (result.success && result.subscription) {
         try {
           const remindersRepo = await import('../../data/reminders.repo.js');
+          const { syncLegacyReminderFields } = await import('../../data/subscriptions.js');
           const incoming = Array.isArray(subscription.reminderRules)
             ? subscription.reminderRules
             : null;
@@ -108,6 +109,7 @@ async function handleSubscriptions(request, env, path) {
             ? incoming.map(remindersRepo.normalizeRule)
             : remindersRepo.defaultPresetRules();
           await remindersRepo.replaceForSubscription(env, result.subscription.id, rules);
+          await syncLegacyReminderFields(env, result.subscription.id, rules);
         } catch (err) {
           console.error('[subscriptions] 写入提醒规则失败（订阅本身已创建）:', err);
         }

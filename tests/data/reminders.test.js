@@ -97,4 +97,31 @@ describe('reminders.repo', () => {
     const b = repo.normalizeRule({ type: 'after_expiry', value: 0, unit: 'days', repeatInterval: 24 });
     expect(b.repeatInterval).toBe(24);
   });
+
+  it('formatRulesSummary：多规则摘要', () => {
+    const summary = repo.formatRulesSummary([
+      { id: '1', type: 'before_expiry', value: 30, unit: 'days', isEnabled: true, createdAt: '' },
+      { id: '2', type: 'before_expiry', value: 7, unit: 'days', isEnabled: true, createdAt: '' },
+      { id: '3', type: 'on_expiry', value: 0, unit: 'days', isEnabled: true, createdAt: '' }
+    ]);
+    expect(summary).toContain('30');
+    expect(summary).toContain('7');
+    expect(summary).toContain('到期当天');
+  });
+
+  it('deriveLegacyFromRules：取最大 before_expiry', () => {
+    const legacy = repo.deriveLegacyFromRules([
+      { id: '1', type: 'before_expiry', value: 30, unit: 'days', isEnabled: true, createdAt: '' },
+      { id: '2', type: 'before_expiry', value: 7, unit: 'days', isEnabled: true, createdAt: '' },
+      { id: '3', type: 'on_expiry', value: 0, unit: 'days', isEnabled: true, createdAt: '' }
+    ]);
+    expect(legacy).toEqual({ unit: 'day', value: 30 });
+  });
+
+  it('deriveLegacyFromRules：仅 on_expiry 时 value=0', () => {
+    const legacy = repo.deriveLegacyFromRules([
+      { id: '1', type: 'on_expiry', value: 0, unit: 'days', isEnabled: true, createdAt: '' }
+    ]);
+    expect(legacy).toEqual({ unit: 'day', value: 0 });
+  });
 });

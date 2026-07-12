@@ -205,3 +205,71 @@ export async function deleteRule(env, subId, ruleId) {
 export async function clearForSubscription(env, subId) {
   await env.SUBSCRIPTIONS_KV.delete(KEY_PREFIX + subId);
 }
+
+/**
+ * 从多规则推导列表展示用的 legacy 单点字段（兼容旧 UI / 通知正文）。
+ * 优先取已启用的 before_expiry 中 value 最大的一条；否则 on_expiry；否则首条启用规则。
+ *
+ * @param {ReminderRule[]} rules
+ * @returns {{ unit: 'day'|'hour', value: number }}
+ */
+export function deriveLegacyFromRules(rules) {
+  const list = Array.isArray(rules) ? rules.filter((r) => r && r.isEnabled !== false) : [];
+  if (list.length === 0) return { unit: 'day', value: 7 };
+
+  const befores = list.filter((r) => r.type === 'before_expiry');
+  if (befores.length > 0) {
+    const sorted = [...befores].sort((a, b) => Number(b.value) - Number(a.value));
+    const top = sorted[0];
+    const unit = top.unit === 'hours' ? 'hour' : 'day';
+    return { unit, value: Number.isFinite(top.value) ? top.value : 7 };
+  }
+
+  const on = list.find((r) => r.type === 'on_expiry');
+  if (on) return { unit: 'day', value: 0 };
+
+  const first = list[0];
+  const unit = first.unit === 'hours' ? 'hour' : 'day';
+  return { unit, value: Number.isFinite(first.value) ? first.value : 7 };
+}
+
+/**
+ * 生成列表「提醒」列摘要文案（多规则）。
+ *
+ * @param {ReminderRule[]} rules
+ * @returns {string}
+ */
+export function formatRulesSummary(rules) {
+  const list = Array.isArray(rules) ? rules.filter((r) => r && r.isEnabled !== false) : [];
+  if (list.length === 0) return '未设置提醒';
+
+  /** @type {string[]} */
+  const parts = [];
+  const beforeDays = list
+    .filter((r) => r.type === 'before_expiry' && r.unit !== 'hours')
+    .map((r) => r.value)
+    .filter((v) => Number.isFinite(v))
+    .sort((a, b) => b - a);
+  const beforeHours = list
+    .filter((r) => r.type === 'before_expiry' && r.unit === 'hours')
+    .map((r) => r.value)
+    .filter((v) => Number.isFinite(v))
+    .sort((a, b) => b - a);
+
+  if (beforeDays.length > 0) {
+    parts.push(`提前 ${beforeDays.join('/')} 天`);
+  }
+  if (beforeHours.length > 0) {
+    parts.push(`提前 ${beforeHours.join('/')} 小时`);
+  }
+  if (list.some((r) => r.type === 'on_expiry' || (r.type === 'before_expiry' && r.value === 0))) {
+    parts.push('到期当天');
+  }
+  const after = list.find((r) => r.type === 'after_expiry');
+  if (after) {
+    const interval = after.repeatInterval && after.repeatInterval > 0 ? after.repeatInterval : 24;
+    parts.push(`到期后每 ${interval} 小时`);
+  }
+
+  return parts.length > 0 ? parts.join(' · ') : '未设置提醒';
+}

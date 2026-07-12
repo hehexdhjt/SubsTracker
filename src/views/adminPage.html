@@ -1356,7 +1356,58 @@ const lunarBiz = {
       }
     }
 
+    function formatReminderRulesSummary(rules) {
+      const list = Array.isArray(rules) ? rules.filter(function (r) { return r && r.isEnabled !== false; }) : [];
+      if (list.length === 0) return '';
+
+      var parts = [];
+      var beforeDays = list
+        .filter(function (r) { return r.type === 'before_expiry' && r.unit !== 'hours'; })
+        .map(function (r) { return r.value; })
+        .filter(function (v) { return Number.isFinite(v); })
+        .sort(function (a, b) { return b - a; });
+      var beforeHours = list
+        .filter(function (r) { return r.type === 'before_expiry' && r.unit === 'hours'; })
+        .map(function (r) { return r.value; })
+        .filter(function (v) { return Number.isFinite(v); })
+        .sort(function (a, b) { return b - a; });
+
+      if (beforeDays.length > 0) parts.push('提前 ' + beforeDays.join('/') + ' 天');
+      if (beforeHours.length > 0) parts.push('提前 ' + beforeHours.join('/') + ' 小时');
+      if (list.some(function (r) { return r.type === 'on_expiry' || (r.type === 'before_expiry' && r.value === 0); })) {
+        parts.push('到期当天');
+      }
+      var after = list.find(function (r) { return r.type === 'after_expiry'; });
+      if (after) {
+        var interval = after.repeatInterval && after.repeatInterval > 0 ? after.repeatInterval : 24;
+        parts.push('到期后每 ' + interval + ' 小时');
+      }
+      return parts.join(' · ');
+    }
+
     function getReminderSettings(subscription) {
+      // 优先使用真实多规则（列表 API 已附带 reminderRules / reminderRulesSummary）
+      var rules = Array.isArray(subscription.reminderRules) ? subscription.reminderRules : null;
+      var summary = subscription.reminderRulesSummary || (rules ? formatReminderRulesSummary(rules) : '');
+      if (summary) {
+        var enabled = rules ? rules.filter(function (r) { return r && r.isEnabled !== false; }) : [];
+        var beforeDays = enabled
+          .filter(function (r) { return r.type === 'before_expiry' && r.unit !== 'hours'; })
+          .map(function (r) { return Number(r.value); })
+          .filter(function (v) { return Number.isFinite(v); });
+        var beforeHours = enabled
+          .filter(function (r) { return r.type === 'before_expiry' && r.unit === 'hours'; })
+          .map(function (r) { return Number(r.value); })
+          .filter(function (v) { return Number.isFinite(v); });
+        var maxDay = beforeDays.length ? Math.max.apply(null, beforeDays) : null;
+        var maxHour = beforeHours.length ? Math.max.apply(null, beforeHours) : null;
+        var unit = maxHour != null && (maxDay == null || maxHour / 24 > maxDay) ? 'hour' : 'day';
+        var value = unit === 'hour'
+          ? (maxHour != null ? maxHour : 0)
+          : (maxDay != null ? maxDay : (enabled.some(function (r) { return r.type === 'on_expiry'; }) ? 0 : 7));
+        return { unit: unit, value: value, displayText: summary };
+      }
+
       const fallbackDays = subscription.reminderDays !== undefined ? subscription.reminderDays : 7;
       let unit = subscription.reminderUnit || '';
       let value = subscription.reminderValue;
@@ -1655,10 +1706,9 @@ const lunarBiz = {
           : '';
         const startDateHtml = startDateText ? createHoverText(startDateText, 30, 'text-xs text-gray-500 mt-1') : '';
 
-        const reminderExtra = reminder.value === 0
-          ? '<div class="text-xs text-gray-500 mt-1">仅到期时提醒</div>'
-          : (reminder.unit === 'hour' ? '<div class="text-xs text-gray-500 mt-1">小时级提醒</div>' : '');
-        const reminderHtml = '<div><i class="fas fa-bell mr-1"></i>' + reminder.displayText + '</div>' + reminderExtra;
+        const reminderHtml = '<div class="text-sm text-gray-900"><i class="fas fa-bell mr-1 text-indigo-500"></i>' +
+          reminder.displayText + '</div>' +
+          '<div class="text-xs text-gray-400 mt-1">精确日触发</div>';
 
         const currencySymbols = {
           'CNY': '¥', 'USD': '$', 'HKD': 'HK$', 'TWD': 'NT$', 

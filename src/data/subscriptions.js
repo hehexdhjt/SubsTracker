@@ -73,16 +73,57 @@ function buildTimezoneDate(year, month, day, timezone) {
 
 /**
  * 获取所有订阅（从新 repo 读取）。
+ * 会附带 reminderRules / reminderRulesSummary，供列表展示真实提醒策略。
  *
  * @param {any} env
  * @returns {Promise<Array<any>>}
  */
 async function getAllSubscriptions(env) {
   try {
-    return await subRepo.listAll(env);
+    const { listForSubscription, formatRulesSummary, legacyFieldToRule } = await import('./reminders.repo.js');
+    const subs = await subRepo.listAll(env);
+    return Promise.all(
+      subs.map(async (sub) => {
+        let rules = await listForSubscription(env, sub.id);
+        if (rules.length === 0) {
+          rules = [legacyFieldToRule(sub)];
+        }
+        return {
+          ...sub,
+          reminderRules: rules,
+          reminderRulesSummary: formatRulesSummary(rules)
+        };
+      })
+    );
   } catch (error) {
     console.error('[subscriptions] 读取列表失败:', error);
     return [];
+  }
+}
+
+/**
+ * 将多规则同步回订阅上的 legacy 提醒字段，避免列表/旧路径与规则脱节。
+ *
+ * @param {any} env
+ * @param {string} subId
+ * @param {Array<any>} rules
+ */
+async function syncLegacyReminderFields(env, subId, rules) {
+  try {
+    const { deriveLegacyFromRules } = await import('./reminders.repo.js');
+    const existing = await subRepo.getById(env, subId);
+    if (!existing) return;
+    const legacy = deriveLegacyFromRules(rules);
+    await subRepo.save(env, {
+      ...existing,
+      reminderUnit: legacy.unit,
+      reminderValue: legacy.value,
+      reminderDays: legacy.unit === 'day' ? legacy.value : undefined,
+      reminderHours: legacy.unit === 'hour' ? legacy.value : undefined,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[subscriptions] 同步 legacy 提醒字段失败:', error);
   }
 }
 
@@ -624,5 +665,6 @@ export {
   manualRenewSubscription,
   deletePaymentRecord,
   updatePaymentRecord,
-  toggleSubscriptionStatus
+  toggleSubscriptionStatus,
+  syncLegacyReminderFields
 };
