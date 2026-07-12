@@ -1412,8 +1412,12 @@ const lunarBiz = {
 
     function getReminderSettings(subscription) {
       // 优先使用真实多规则（列表 API 已附带 reminderRules / reminderRulesSummary）
+      // 注意：整函数统一用 var，避免 var/let 同名重复声明导致整页脚本中断
       var rules = Array.isArray(subscription.reminderRules) ? subscription.reminderRules : null;
       var summary = subscription.reminderRulesSummary || (rules ? formatReminderRulesSummary(rules) : '');
+      var unit;
+      var value;
+
       if (summary) {
         var enabled = rules ? rules.filter(function (r) { return r && r.isEnabled !== false; }) : [];
         var beforeDays = enabled
@@ -1426,16 +1430,16 @@ const lunarBiz = {
           .filter(function (v) { return Number.isFinite(v); });
         var maxDay = beforeDays.length ? Math.max.apply(null, beforeDays) : null;
         var maxHour = beforeHours.length ? Math.max.apply(null, beforeHours) : null;
-        var unit = maxHour != null && (maxDay == null || maxHour / 24 > maxDay) ? 'hour' : 'day';
-        var value = unit === 'hour'
+        unit = maxHour != null && (maxDay == null || maxHour / 24 > maxDay) ? 'hour' : 'day';
+        value = unit === 'hour'
           ? (maxHour != null ? maxHour : 0)
           : (maxDay != null ? maxDay : (enabled.some(function (r) { return r.type === 'on_expiry'; }) ? 0 : 7));
         return { unit: unit, value: value, displayText: summary };
       }
 
-      const fallbackDays = subscription.reminderDays !== undefined ? subscription.reminderDays : 7;
-      let unit = subscription.reminderUnit || '';
-      let value = subscription.reminderValue;
+      var fallbackDays = subscription.reminderDays !== undefined ? subscription.reminderDays : 7;
+      unit = subscription.reminderUnit || '';
+      value = subscription.reminderValue;
 
       if (unit !== 'hour') {
         unit = 'day';
@@ -1452,8 +1456,8 @@ const lunarBiz = {
       value = Number(value);
 
       return {
-        unit,
-        value,
+        unit: unit,
+        value: value,
         displayText: unit === 'hour' ? '提前' + value + '小时' : '提前' + value + '天'
       };
     }
