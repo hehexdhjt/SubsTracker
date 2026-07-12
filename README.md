@@ -1,105 +1,320 @@
 # SubsTracker — 订阅管理与提醒系统
 
-基于 Cloudflare Workers 的轻量级订阅管理系统。跟踪所有订阅服务的到期时间，通过 Telegram、Bark、Webhook 等 9 种渠道发送可靠的多档位提醒，并提供完整的发送日志用于自助排查。
+基于 **Cloudflare Workers + KV** 的轻量级订阅到期提醒。在网页里管理订阅，到点通过 Telegram / Bark / 企业微信 / ntfy 等 **10 种渠道** 推送，并自带发送与调度日志方便排查。
+
+**适合**：个人自托管、域名/会员/账单到期提醒。  
+**不适合**：多用户协作、复杂企业审批流。
 
 ---
 
-## ✨ 功能特色
+## 目录
 
-### 🎯 订阅管理
-
-- **CRUD**：添加、编辑、删除、启用/停用各类订阅服务
-- **多档位提醒**：每订阅独立设置 N 条规则，支持"到期前 7/3/1 天 + 当天 + 到期后每 X 小时重复直到续费"。**语义为精确日触发**：`到期前 N 天` 仅在剩余天数正好等于 N 时发送一次，不会在窗口内每天连发；需要多天提醒请添加多条规则（默认预设即 7/3/1/当天）
-- **自动续订**：到期后自动推进到期日并写入支付记录
-- **手动续订**：自定义金额、日期、周期数、备注
-- **支付历史**：完整记录、可编辑/删除（删除时自动回退订阅周期）
-- **农历支持**：1900-2100 年农历转换，可按农历周期续订
-
-### 📱 多渠道通知（10 种）
-
-| 渠道 | 状态 | 配置项 |
-|------|------|--------|
-| Telegram | ✅ MarkdownV2 + 失败降级纯文本 | Bot Token + Chat ID + 可选 Topic ID |
-| NotifyX | ✅ | API Key |
-| Webhook | ✅ 支持自定义 Header 与消息模板 | URL + 模板（含 `{{title}} {{content}} {{daysRemaining}}` 等） |
-| 企业微信机器人 | ✅ text/markdown + @ 提醒 | Webhook URL |
-| Resend 邮件 | ✅ HTML 模板 | API Key + 收发邮箱 |
-| Bark（iOS） | ✅ 支持自建服务器 | Server + Device Key |
-| Gotify | ✅ 自托管 | Server URL + App Token |
-| Server酱 | ✅ Server酱 3 | SendKey |
-| PushPlus | ✅ Topic + Channel | Token |
-| ntfy | ✅ 公共/自建服务器 | Server + Topic + 可选 Token |
-
-### 📦 备份与恢复
-
-- **导出 / 导入**：系统配置页支持下载 JSON 备份（配置 + 订阅 + 提醒规则 + 分类），并一键恢复
-- **默认脱敏**：导出不含 Token / 密码；可选勾选「包含敏感配置」
-- **合并 / 覆盖**：导入支持按 ID 合并，或清空后整包覆盖（覆盖前请先导出当前数据）
-
-### 📊 可观测性
-
-- **通知历史页** `/admin/notify-logs`：每条发送（成功 / 失败）都有记录，可按订阅、渠道、状态、时间筛选
-- **调度执行日志**：每次 Cron 触发的链路日志（命中/去重/发送/续订计数 + 失败原因），可在通知历史页折叠预览
-- **`/debug` 时区诊断**：登录后访问，显示 UTC 时间、用户 TZ 时间、当前是否在通知窗口
-
-### 💰 财务管理
-
-- 多币种（CNY / USD / HKD / TWD / JPY / EUR / GBP / KRW / TRY）+ 动态汇率换算
-- 仪表盘：月度/年度支出 + 环比 + 即将到期 + 未来 7 天续费 + 按类型/分类排行
-
-### 🔐 时区与通知时段
-
-- 配置项 `TIMEZONE` 默认 `Asia/Shanghai`，是所有时间判断与展示的真相源
-- `NOTIFICATION_HOURS` 是按 `TIMEZONE` 解释的"小时数组"，例如 `["08", "20"]`
-- 留空 = 全天可发（仍受 Cron 每小时触发限制）
-- `*` 或 `ALL` 等同于留空
+1. [5 分钟上手](#-5-分钟上手)
+2. [部署](#-部署)
+3. [第一次必做配置](#-第一次必做配置)
+4. [日常怎么用](#-日常怎么用)
+5. [通知到底怎么工作](#-通知到底怎么工作重点必读)
+6. [功能一览](#-功能一览)
+7. [常见问题 FAQ](#-常见问题-faq)
+8. [升级 / 开发 / 第三方 API](#-升级--开发--第三方-api)
+9. [安全提醒](#-安全提醒)
 
 ---
 
-## 🚀 部署
+## 🚀 5 分钟上手
 
-### 方式一：命令行部署
+```text
+部署 Worker
+  → 用 admin / password 登录（立刻改密码）
+  → 系统配置：选时区（中国选 Asia/Shanghai）
+  → 系统配置：允许发送的小时（例如只想早上 8 点发就填 08）
+  → 勾选至少一种通知渠道并填好 Token，点「测试」直到成功
+  → 订阅列表：添加订阅（可用默认提醒预设 7/3/1 天 + 当天）
+  → 到点后去「通知历史」看是否发送 / 为何跳过
+```
+
+若中途卡住，先看下方 [常见问题 FAQ](#-常见问题-faq)。
+
+---
+
+## 📦 部署
+
+### 方式一：命令行（推荐）
 
 ```bash
 git clone https://github.com/wangwangit/SubsTracker.git
 cd SubsTracker
 npm install
 
-# 设置 Token
-# Linux/macOS:
+# Linux / macOS
 export CLOUDFLARE_API_TOKEN=你的token
-# Windows PowerShell:
-$env:CLOUDFLARE_API_TOKEN="你的token"
+# Windows PowerShell
+# $env:CLOUDFLARE_API_TOKEN="你的token"
 
 npm run deploy:safe
 ```
 
-`deploy:safe` 自动执行：
-1. `npm run setup` — 检测/创建 `SUBSCRIPTIONS_KV` + `SUBSCRIPTIONS_KV_PREVIEW`，自动写入 `wrangler.toml`
-2. `npm run deploy` — `wrangler deploy`
+`deploy:safe` 会：
 
-### 方式二：GitHub Actions 自动部署
+1. `npm run setup` — 自动创建 / 绑定 KV（`SUBSCRIPTIONS_KV`）
+2. `npm run deploy` — 部署 Worker
 
-Fork 本仓库后，在仓库 **Settings → Secrets and variables → Actions** 中添加：
+部署成功后，终端会打印类似：
 
-| Secret 名称 | 说明 |
-|---|---|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API Token（需要 Workers 编辑 + KV 编辑权限） |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Account ID（可选，Token 已锁定账户时可省略） |
+`https://subscription-manager.<你的子域>.workers.dev`
 
-配置完成后，每次 push 到 `master` 分支会自动运行测试并部署。也可在 GitHub Actions 页面手动触发 Deploy workflow。
+### 方式二：GitHub Actions
 
-### 默认凭据
+1. Fork 本仓库  
+2. 仓库 **Settings → Secrets and variables → Actions** 增加：
 
-部署后首次登录：
-- 用户名：`admin`
-- 密码：`password`
+| Secret | 说明 |
+|--------|------|
+| `CLOUDFLARE_API_TOKEN` | 需 Workers 编辑 + KV 编辑权限 |
+| `CLOUDFLARE_ACCOUNT_ID` | 可选 |
 
-**首次登录后请立即在系统配置中修改密码。**
+3. 推送到 `master` / `main` 或手动运行 **Deploy** workflow  
+
+### 默认登录
+
+| 项 | 值 |
+|----|-----|
+| 用户名 | `admin` |
+| 密码 | `password` |
+
+**登录后请立刻在「系统配置」修改密码。** 公网暴露默认密码会被接管。
 
 ### 忘记密码
 
-到 Cloudflare Dashboard → Workers → KV → `SUBSCRIPTIONS_KV` → 编辑 `config` 这条记录的 JSON 中 `ADMIN_PASSWORD` 字段。
+Cloudflare Dashboard → **Workers & Pages → KV** → 打开 `SUBSCRIPTIONS_KV` → 编辑 key `config` 的 JSON，修改 `ADMIN_PASSWORD` 后保存。
+
+---
+
+## ✅ 第一次必做配置
+
+打开 **系统配置**，建议按顺序做完：
+
+### 1. 改密码
+
+管理员用户名 / 密码改成自己的。页面若提示仍是默认 `admin`，请务必处理。
+
+### 2. 时区
+
+- 中国大陆用户：**`Asia/Shanghai`（北京时间）**
+- 所有「到期还有几天」「几点发通知」都以这里为准
+
+### 3. 允许发送的小时
+
+| 你填什么 | 含义 |
+|----------|------|
+| `08` | **仅**北京时间 **8 点那一小时**会发（约 8:00–8:59 的那次整点检查） |
+| `08, 20` | 早上 8 点、晚上 8 点各可能发一次 |
+| **留空** 或 `*` | **每个整点**都可以发 |
+
+要点：
+
+- 系统大约 **每小时整点** 检查一次（Cron：`0 * * * *`，按 UTC 触发，但判断用你配置的时区）。
+- 填了 `08`、现在是 19 点：**不会发**。通知历史里出现「不在允许发送的小时」是 **正常跳过**，不是坏了。
+- 配置页下方有实时预览（会显示「当前会发 / 不会发」）。**改完要点保存**，预览才与服务器一致。
+
+### 4. 打开至少一种通知渠道
+
+勾选渠道 → 填 Token / Chat ID 等 → 点 **测试 xxx 通知**，确认手机/群里能收到。
+
+常用渠道简表：
+
+| 渠道 | 你需要准备 |
+|------|------------|
+| Telegram | Bot Token + Chat ID；Forum 群可选 Topic ID |
+| Bark | Device Key；自建可填 Server |
+| 企业微信 | 群机器人 Webhook |
+| ntfy | Server（默认 ntfy.sh）+ Topic；可选 Token |
+| 邮件 | Resend API Key + 收发邮箱 |
+| Webhook | 任意 HTTP 地址 + 可选模板 |
+
+### 5. 加一条测试订阅
+
+- 到期日设近一点，提醒规则可用 **「应用预设 7/3/1/当天」**
+- 或临时加一条「到期前 0 天 / 到期当天」，并把「允许发送的小时」改成当前小时做联调（测完改回）
+
+---
+
+## 📋 日常怎么用
+
+### 订阅列表
+
+| 操作 | 说明 |
+|------|------|
+| 添加 / 编辑 | 名称、周期、金额、分类、农历等 |
+| **克隆** | 复制一条（名称带「副本」），适合 esim 保号等同构订阅 |
+| 续订 | 手动延长周期并记支付 |
+| 停用 / 启用 | 停用后不再提醒（本地刷新，不必整页重载） |
+| 测试 | 立刻对该订阅发一条测试通知 |
+| 历史 | 支付记录 |
+| 筛选 | 关键词、循环/重置模式、**状态**（正常/即将到期/已过期/已停用）、分类 |
+
+### 提醒规则（每条订阅可多条）
+
+默认预设：**到期前 7 天、3 天、1 天 + 到期当天**。
+
+**重要语义（很多人误解这里）：**
+
+> 「到期前 N 天」= **剩余天数正好等于 N 的那一天发一次**  
+> **不会**从第 N 天起每天连发。
+
+若要 7、6、5… 都提醒，需要多条规则，或使用预设 7/3/1/当天。
+
+其它类型：
+
+- **到期当天**
+- **到期后**：每隔 X 小时提醒，直到你续费（受「允许发送的小时」约束）
+
+### 订阅模式：循环 vs 到期重置
+
+| 模式 | 一句话 | 例子 |
+|------|--------|------|
+| **循环订阅** | 未过期就从**当前到期日**往后接 | 会员 6/15 到期，6/3 续费 → 新到期约 7/15 |
+| **到期重置** | 从**支付日**重新算一整段周期 | 保号卡充值日重新起算 180 天 |
+
+### 周期快捷
+
+表单里可用 **季度 / 半年 / 一年** 快捷（本质是 3 个月 / 6 个月 / 1 年）。  
+公历可勾选 **「每月最后一天」**（适合「每月月末提醒」；农历下不用这个）。
+
+### 备份与迁移
+
+在 **系统配置** 最下方：
+
+1. **导出备份** → 下载 JSON（默认可不含密钥）
+2. 换账号 / 重装后 **导入**  
+   - **合并**：按订阅 ID 覆盖同名，保留其它  
+   - **覆盖**：先清空再整包导入（危险，先导出当前数据）
+
+升级大版本或迁移 CF 账号前，**先导出一份**。
+
+---
+
+## 🔔 通知到底怎么工作（重点必读）
+
+```text
+每小时整点 Cron
+  → 看现在是否在「允许发送的小时」（按时区）
+  → 看每条启用中的订阅是否命中某条提醒规则（精确日/小时）
+  → 去重（同一天同一规则不重复刷）
+  → 发到你启用的渠道
+  → 写入「通知历史」+「调度日志」
+```
+
+| 现象 | 通常原因 |
+|------|----------|
+| 任务历史：不在允许发送的小时 | 当前整点不在你填的 `08` 等列表里 → **正常** |
+| 在窗口内但 sentCount=0 | 今天没有规则被命中（还没到「正好 N 天」） |
+| 有 failed 记录 | 渠道配置错 / Token 失效 / 网络拒绝 → 看错误详情 |
+| 一天只在 8 点附近收到 | 你只配置了 `08`，符合预期 |
+| 希望一天提醒多次 | 把允许小时写成多个，如 `08, 12, 20`，或留空 |
+
+**列表上的「提醒」列**：显示该订阅真实多规则摘要（如 `提前 7/3/1 天 · 到期当天`），与后台 `reminder_rules` 一致。
+
+---
+
+## ✨ 功能一览
+
+### 订阅
+
+- 增删改查、启用/停用、克隆、筛选  
+- 多规则提醒、农历周期、自动/手动续订、支付历史  
+- 季/半年快捷、公历月末选项  
+
+### 通知渠道（10）
+
+Telegram · NotifyX · Webhook · 企业微信 · Resend 邮件 · Bark · Gotify · Server酱 · PushPlus · **ntfy**
+
+### 可观测
+
+- `/admin/notify-logs`：发送成功/失败明细  
+- 调度日志：命中/去重/跳过原因  
+- `/debug`：时区与通知窗口诊断（需登录）  
+
+### 财务
+
+多币种、仪表盘支出统计（依赖支付记录与汇率；汇率接口失败时有兜底）
+
+---
+
+## ❓ 常见问题 FAQ
+
+### 1. 为什么没收到通知？
+
+按顺序查：
+
+1. **系统配置**是否启用了渠道？「测试」能否收到？  
+2. **允许发送的小时**是否包含「现在」？（填了 `08` 则只有 8 点）  
+3. **时区**是否是 `Asia/Shanghai`？  
+4. 该订阅是否 **启用**？提醒规则是否启用？  
+5. 今天是否正好命中「到期前 N 天 / 当天」？  
+6. 打开 **通知历史**：  
+   - 有 failed → 看渠道报错  
+   - 只有跳过、写着不在允许小时 → 等到配置的小时  
+   - 完全没有相关记录 → 可能还没到整点检查，或规则未命中  
+
+### 2. 任务历史写「不在允许发送的小时 / 不在配置时段」？
+
+说明定时任务跑了，但当前小时不允许发。  
+例如只允许 `08`，晚上 19 点跳过 → **正常**。  
+到北京时间 8 点再看是否发送。
+
+### 3. 设置了「到期前 7 天」，为什么第 6～1 天没有通知？
+
+这是 **精确日** 设计：只在剩余 **正好 7 天** 那天发。  
+需要多天提醒请加多条规则，或用预设 **7/3/1/当天**。
+
+### 4. 列表提醒一直显示「提前 7 天」？
+
+当前版本列表会读真实规则摘要。请 **强制刷新**（Ctrl+Shift+R）。  
+若仍不对，打开浏览器开发者工具 → Network → `subscriptions`，看返回里是否有 `reminderRulesSummary`。
+
+### 5. 克隆按钮看不见或没颜色？
+
+操作列有 **克隆**（青色）。强制刷新；按钮在「编辑」后面。  
+若只有灰字，确认已部署含主题样式的最新版本。
+
+### 6. 循环订阅和到期重置有啥区别？
+
+见上文表格：会员续费用 **循环**；按充值日重算周期用 **重置**。
+
+### 7. 如何备份 / 换 Cloudflare 账号？
+
+系统配置 → **导出备份** → 新环境部署后 **导入**。  
+覆盖模式会清空现有订阅，操作前再导出一次当前数据。
+
+### 8. Telegram 如何发到群话题（Topic）？
+
+系统配置 → Telegram → 填写可选 **Topic ID**（对应 `message_thread_id`）。  
+普通私聊/普通群可留空。
+
+### 9. ntfy 怎么配？
+
+启用 ntfy → Server 默认 `https://ntfy.sh` → 填自己的 Topic → 手机 ntfy App 订阅同一 Topic → 点测试。
+
+### 10. 控制台里 `beacon.min.js` / cloudflareinsights 报错？
+
+那是 **Cloudflare 统计脚本**，不是本项目业务代码。一般可忽略，与订阅列表无关。
+
+### 11. Authentication error [code: 10000]（部署时）
+
+Token 权限不足或 Wrangler 缓存问题：检查 API Token 权限，必要时删 `.wrangler/` 后重试。
+
+### 12. 第三方系统想调通知接口？
+
+在系统配置生成 **第三方 API 令牌** 后：
+
+```bash
+curl -X POST "https://你的域名.workers.dev/api/notify/你的令牌" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"标题","content":"正文"}'
+```
+
+也可用请求头：`Authorization: Bearer 你的令牌`。
 
 ---
 
@@ -111,9 +326,9 @@ npm install
 npm run deploy:safe
 ```
 
-首次访问时 KV 数据会**自动迁移**到新结构（多 Key 拆分、提醒规则、可观测性日志）。旧数据自动备份保留 7 天。
+首次访问会自动做 KV 结构迁移。升级前建议 **导出备份**。
 
-> ⚠️ **如果你之前按 UTC 配置过 `NOTIFICATION_HOURS`**：升级后该字段改按你设置的 `TIMEZONE` 解释。请到配置页根据底部"实时预览"重新调整。
+> 若很久以前按 **UTC** 理解「通知小时」，现在请一律按配置里的 **时区**（如北京时间）理解，并到配置页看预览。
 
 ---
 
@@ -121,64 +336,39 @@ npm run deploy:safe
 
 ```bash
 npm install
-npm test              # 跑 170+ 条单元测试
-npm run lint          # tsc 类型检查（用 JSDoc + // @ts-check）
-npm run test:watch    # watch 模式
-
-# 本地启动 dev 环境（独立的 miniflare KV，不影响生产数据）
+npm test           # 单元 / 集成测试
+npm run lint
 npx wrangler dev --config wrangler.dev.toml --local
-# 浏览器打开 http://127.0.0.1:8787，admin/password
+# http://127.0.0.1:8787  默认 admin / password
 ```
 
-源码结构：
-
-```
+```text
 src/
-├── index.js              # Worker 入口（fetch + scheduled）
-├── app.js                # Hono 应用装配
-├── core/                 # 时间 / 农历 / 货币 / 认证
-├── data/                 # KV 仓库 + 自动迁移
-├── services/             # 调度器 + 通知（9 渠道适配器）
-├── api/                  # 路由 + handler + 中间件
-└── views/                # HTML 页面（text-import）
-
-public/                   # Workers Assets 静态资源
-└── js/lib/               # 共享前端库
-
-tests/                    # Vitest + workers-pool
+├── index.js           # fetch + scheduled 入口
+├── app.js             # Hono
+├── core/              # 时间、农历、货币、JWT
+├── data/              # KV 与迁移
+├── services/          # 调度器 + 通知渠道
+├── api/               # 路由与 handler
+└── views/             # 管理端 HTML
+public/                # 静态资源（如 api-client.js）
+tests/                 # Vitest + workerd
 ```
 
 ---
 
-## 🔧 第三方 API 通知
+## 🔐 安全提醒
 
-```bash
-curl -X POST https://your-domain.workers.dev/api/notify/YOUR_TOKEN \
-  -H "Content-Type: application/json" \
-  -d '{"title":"自定义标题","content":"消息正文","tags":["可选","标签"]}'
-```
-
-也可用 `Authorization: Bearer YOUR_TOKEN` 或 `?token=YOUR_TOKEN`。
+1. **立刻修改** 默认 `admin` / `password`  
+2. 不要把 API Token、Bot Token 提交进 Git  
+3. 备份 JSON 若勾选「包含敏感配置」，请当密码一样保管  
+4. 对话、截图里不要长期暴露 Cloudflare API Token；泄露请到 Dashboard **轮换 Token**
 
 ---
 
-## 🛠 常见问题
+## 🤝 贡献与协议
 
-### "为什么没收到通知？"
-
-1. 登录后访问 `/admin/notify-logs`，按订阅 / 状态 / 时间筛选——若有"failed"行，展开看具体错误
-2. 访问 `/debug`，看"时区诊断"区块——确认当前是否在通知窗口
-3. 如果"在窗口内但 sched_log status=ok 且 sentCount=0"，说明本次没命中任何提醒规则——检查订阅的"提醒规则"配置
-
-### Authentication error [code: 10000]
-
-通常是 Wrangler 缓存或 Token 权限问题。重新设置 Token 后重试，仍报错则清理 `.wrangler/` 目录后再来。
-
----
-
-## 🤝 贡献 / 协议
-
-PR 欢迎，issue 也欢迎。代码风格：JSDoc 中文注释 + Vitest 单测。
+欢迎 Issue / PR。业务逻辑变更请尽量带测试。  
 MIT License。
 
 ---
