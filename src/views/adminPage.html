@@ -447,6 +447,15 @@
               <option value="reset">到期重置</option>
             </select>
           </div>
+          <div class="sm:w-36 lg:w-32">
+            <select id="statusFilter" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white text-sm">
+              <option value="">全部状态</option>
+              <option value="active">正常</option>
+              <option value="soon">即将到期</option>
+              <option value="expired">已过期</option>
+              <option value="disabled">已停用</option>
+            </select>
+          </div>
           <div class="sm:w-44 lg:w-40">
             <select id="categoryFilter" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white text-sm">
               <option value="">全部分类</option>
@@ -572,8 +581,12 @@
               <option value="cycle" selected>📅 循环订阅</option>
               <option value="reset">⏳ 到期重置</option>
             </select>
-            
-            <div class="mt-2 flex items-center space-x-3">
+            <p class="mt-1 text-xs text-gray-500 leading-relaxed">
+              <strong>循环</strong>：未过期续订时从当前到期日接续（如会员续费）；
+              <strong>重置</strong>：从支付日重新起算周期（如保号卡按充值日算）。
+            </p>
+
+            <div class="mt-2 flex items-center space-x-3 flex-wrap gap-y-1">
                  <label class="inline-flex items-center cursor-pointer select-none">
                   <input type="checkbox" id="showLunar" class="form-checkbox h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500">
                   <span class="ml-2 text-sm text-gray-600">显示农历日期</span>
@@ -581,6 +594,10 @@
                 <label class="inline-flex items-center cursor-pointer select-none">
                   <input type="checkbox" id="useLunar" class="form-checkbox h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500">
                   <span class="ml-2 text-sm text-gray-600">农历周期</span>
+                </label>
+                <label class="inline-flex items-center cursor-pointer select-none" title="仅公历；续订/推算时落到目标月最后一天">
+                  <input type="checkbox" id="endOfMonth" class="form-checkbox h-4 w-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500">
+                  <span class="ml-2 text-sm text-gray-600">每月最后一天</span>
                 </label>
             </div>
           </div>
@@ -629,6 +646,11 @@
               <option value="month" selected>月</option>
               <option value="year">年</option>
             </select>
+            <div class="mt-1 flex flex-wrap gap-1">
+              <button type="button" class="period-preset text-xs px-2 py-0.5 border border-gray-300 rounded hover:bg-indigo-50 text-gray-600" data-value="3" data-unit="month">季度</button>
+              <button type="button" class="period-preset text-xs px-2 py-0.5 border border-gray-300 rounded hover:bg-indigo-50 text-gray-600" data-value="6" data-unit="month">半年</button>
+              <button type="button" class="period-preset text-xs px-2 py-0.5 border border-gray-300 rounded hover:bg-indigo-50 text-gray-600" data-value="1" data-unit="year">一年</button>
+            </div>
           </div>
         </div>
         
@@ -1533,6 +1555,8 @@ const lunarBiz = {
       const selectedCategory = categorySelect ? categorySelect.value.trim().toLowerCase() : '';
       const modeSelect = document.getElementById('modeFilter');
       const selectedMode = modeSelect ? modeSelect.value : '';
+      const statusSelect = document.getElementById('statusFilter');
+      const selectedStatus = statusSelect ? statusSelect.value : '';
 
       let filtered = Array.isArray(subscriptionsCache) ? [...subscriptionsCache] : [];
 
@@ -1541,9 +1565,9 @@ const lunarBiz = {
           normalizeCategoryTokens(subscription.category).some(token => token.toLowerCase() === selectedCategory)
         );
       }
-      
+
       if (selectedMode) {
-        filtered = filtered.filter(subscription => 
+        filtered = filtered.filter(subscription =>
           (subscription.subscriptionMode || 'cycle') === selectedMode
         );
       }
@@ -1563,16 +1587,41 @@ const lunarBiz = {
       // 清空表格
       tbody.innerHTML = '';
 
+      const currentTime = new Date();
+      const currentTimestamp = currentTime.getTime();
+      const currentDateInTimezone = createUtcCalendarDate(getTodayDateStringInTimezone(globalTimezone));
+
+      // 状态筛选需要先算 daysDiff / soon，故在此处过滤
+      if (selectedStatus) {
+        filtered = filtered.filter(subscription => {
+          const expiryDate = new Date(subscription.expiryDate);
+          const expiryDateKey = formatDateInputInTimezone(subscription.expiryDate, globalTimezone);
+          const expiryDateInTimezone = createUtcCalendarDate(expiryDateKey);
+          const daysDiff = currentDateInTimezone && expiryDateInTimezone
+            ? Math.round((expiryDateInTimezone.getTime() - currentDateInTimezone.getTime()) / (1000 * 60 * 60 * 24))
+            : 0;
+          const diffMs = expiryDate.getTime() - currentTimestamp;
+          const diffHours = diffMs / (1000 * 60 * 60);
+          const reminder = getReminderSettings(subscription);
+          const isSoon = reminder.unit === 'hour'
+            ? diffHours >= 0 && diffHours <= reminder.value
+            : daysDiff >= 0 && daysDiff <= reminder.value;
+
+          if (selectedStatus === 'disabled') return subscription.isActive === false;
+          if (subscription.isActive === false) return false;
+          if (selectedStatus === 'expired') return daysDiff < 0 || diffMs < 0;
+          if (selectedStatus === 'soon') return isSoon && !(daysDiff < 0 || diffMs < 0);
+          if (selectedStatus === 'active') return !(daysDiff < 0 || diffMs < 0) && !isSoon;
+          return true;
+        });
+      }
+
       if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-gray-500"><div>没有符合条件的订阅</div><button onclick="document.getElementById(\'searchKeyword\').value=\'\';document.getElementById(\'clearSearch\').style.display=\'none\';document.getElementById(\'categoryFilter\').value=\'\';document.getElementById(\'modeFilter\').value=\'\';renderSubscriptionTable();" class="mt-2 text-sm text-indigo-600 hover:text-indigo-800"><i class="fas fa-undo mr-1"></i>清除筛选条件</button></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-gray-500"><div>没有符合条件的订阅</div><button onclick="document.getElementById(\'searchKeyword\').value=\'\';document.getElementById(\'clearSearch\').style.display=\'none\';document.getElementById(\'categoryFilter\').value=\'\';document.getElementById(\'modeFilter\').value=\'\';document.getElementById(\'statusFilter\').value=\'\';renderSubscriptionTable();" class="mt-2 text-sm text-indigo-600 hover:text-indigo-800"><i class="fas fa-undo mr-1"></i>清除筛选条件</button></td></tr>';
         return;
       }
 
       filtered.sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
-
-      const currentTime = new Date();
-      const currentTimestamp = currentTime.getTime();
-      const currentDateInTimezone = createUtcCalendarDate(getTodayDateStringInTimezone(globalTimezone));
 
       // 使用 DocumentFragment 进行批量插入，减少页面重绘（移动端性能关键）
       const fragment = document.createDocumentFragment();
@@ -1613,7 +1662,11 @@ const lunarBiz = {
         let periodText = '';
         if (subscription.periodValue && subscription.periodUnit) {
           const unitMap = { day: '天', month: '月', year: '年' };
-          periodText = subscription.periodValue + ' ' + (unitMap[subscription.periodUnit] || subscription.periodUnit);
+          let periodLabel = subscription.periodValue + ' ' + (unitMap[subscription.periodUnit] || subscription.periodUnit);
+          if (subscription.periodUnit === 'month' && Number(subscription.periodValue) === 3) periodLabel = '季度';
+          if (subscription.periodUnit === 'month' && Number(subscription.periodValue) === 6) periodLabel = '半年';
+          if (subscription.endOfMonth && !subscription.useLunar) periodLabel += ' · 月末';
+          periodText = periodLabel;
         }
 
         const autoRenewIcon = subscription.autoRenew !== false
@@ -1758,6 +1811,7 @@ const lunarBiz = {
           '<td data-label="操作" class="px-4 py-3">' +
             '<div class="action-buttons-wrapper">' +
               '<button class="edit btn-primary text-white px-2 py-1 rounded text-xs whitespace-nowrap" data-id="' + subscription.id + '"><i class="fas fa-edit mr-1"></i>编辑</button>' +
+              '<button class="clone bg-teal-500 hover:bg-teal-600 text-white px-2 py-1 rounded text-xs whitespace-nowrap" data-id="' + subscription.id + '" title="克隆为新订阅"><i class="fas fa-copy mr-1"></i>克隆</button>' +
               '<button class="view-history bg-purple-500 hover:bg-purple-600 text-white px-2 py-1 rounded text-xs whitespace-nowrap" data-id="' + subscription.id + '" title="查看支付历史"><i class="fas fa-history mr-1"></i>历史</button>' +
               '<button class="test-notify btn-info text-white px-2 py-1 rounded text-xs whitespace-nowrap" data-id="' + subscription.id + '"><i class="fas fa-paper-plane mr-1"></i>测试</button>' +
               '<button class="renew-now btn-success text-white px-2 py-1 rounded text-xs whitespace-nowrap" data-id="' + subscription.id + '" title="立即续订一个周期"><i class="fas fa-sync-alt mr-1"></i>续订</button>' +
@@ -1774,6 +1828,10 @@ const lunarBiz = {
       tbody.appendChild(fragment);
       document.querySelectorAll('.edit').forEach(button => {
         button.addEventListener('click', editSubscription);
+      });
+
+      document.querySelectorAll('.clone').forEach(button => {
+        button.addEventListener('click', cloneSubscription);
       });
 
       document.querySelectorAll('.delete').forEach(button => {
@@ -1819,6 +1877,11 @@ const lunarBiz = {
     const modeSelect = document.getElementById('modeFilter');
     if (modeSelect) {
       modeSelect.addEventListener('change', () => renderSubscriptionTable());
+    }
+
+    const statusSelect = document.getElementById('statusFilter');
+    if (statusSelect) {
+      statusSelect.addEventListener('change', () => renderSubscriptionTable());
     }
 
     // 获取所有订阅并按到期时间排序
@@ -2454,22 +2517,32 @@ const lunarBiz = {
       const isActivate = action === 'activate';
 
       if (!isActivate && !confirm('确定要停用此订阅吗？停用后将不再收到到期提醒。')) return;
-      
+
       const button = e.target.tagName === 'BUTTON' ? e.target : e.target.parentElement;
       const originalContent = button.innerHTML;
       button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>' + (isActivate ? '启用中...' : '停用中...');
       button.disabled = true;
-      
+
       try {
         const response = await apiFetch('/api/subscriptions/' + id + '/toggle-status', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ isActive: isActivate })
         });
-        
+
         if (response.ok) {
+          // 本地更新缓存并重绘，避免整表重新请求导致跳动
+          if (Array.isArray(subscriptionsCache)) {
+            const idx = subscriptionsCache.findIndex(function (s) { return s.id === id; });
+            if (idx >= 0) {
+              subscriptionsCache[idx] = Object.assign({}, subscriptionsCache[idx], {
+                isActive: isActivate,
+                updatedAt: new Date().toISOString()
+              });
+            }
+          }
           showToast((isActivate ? '启用' : '停用') + '成功', 'success');
-          loadSubscriptions();
+          renderSubscriptionTable();
         } else {
           const error = await response.json();
           showToast((isActivate ? '启用' : '停用') + '失败: ' + (error.message || '未知错误'), 'error');
@@ -2501,11 +2574,91 @@ const lunarBiz = {
       document.getElementById('reminderUnit').value = 'day';
       document.getElementById('isActive').checked = true;
       document.getElementById('autoRenew').checked = true;
+      const endOfMonthEl = document.getElementById('endOfMonth');
+      if (endOfMonthEl) endOfMonthEl.checked = false;
 
       loadLunarPreference();
       calculateExpiryDate();
       setupModalEventListeners();
     });
+
+    /**
+     * 克隆订阅：打开新建表单并预填字段（新 id 保存时生成），同步复制提醒规则。
+     */
+    async function cloneSubscription(e) {
+      const button = e.target.closest('button') || e.target;
+      const id = button.dataset.id;
+      if (!id) return;
+      const original = button.innerHTML;
+      button.disabled = true;
+      button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+      try {
+        const response = await apiFetch('/api/subscriptions/' + id);
+        const subscription = await response.json();
+        if (!subscription || !subscription.id) {
+          showToast('读取订阅失败', 'error');
+          return;
+        }
+
+        document.getElementById('modalTitle').textContent = '克隆订阅';
+        document.getElementById('subscriptionModal').classList.remove('hidden');
+        document.body.classList.add('overflow-hidden');
+        document.getElementById('subscriptionForm').reset();
+        clearFieldErrors();
+
+        document.getElementById('subscriptionId').value = '';
+        document.getElementById('name').value = (subscription.name || '') + ' (副本)';
+        document.getElementById('subscriptionMode').value = subscription.subscriptionMode || 'cycle';
+        document.getElementById('customType').value = subscription.customType || '';
+        document.getElementById('category').value = subscription.category || '';
+        document.getElementById('notes').value = subscription.notes || '';
+        document.getElementById('amount').value =
+          subscription.amount !== null && subscription.amount !== undefined ? subscription.amount : '';
+        document.getElementById('currency').value = subscription.currency || 'CNY';
+        document.getElementById('isActive').checked = subscription.isActive !== false;
+        document.getElementById('autoRenew').checked = subscription.autoRenew !== false;
+        document.getElementById('startDate').value = subscription.startDate
+          ? formatDateInputInTimezone(subscription.startDate, globalTimezone)
+          : getTodayDateStringInTimezone(globalTimezone);
+        document.getElementById('expiryDate').value = subscription.expiryDate
+          ? formatDateInputInTimezone(subscription.expiryDate, globalTimezone)
+          : '';
+        document.getElementById('periodValue').value = subscription.periodValue || 1;
+        document.getElementById('periodUnit').value = subscription.periodUnit || 'month';
+        document.getElementById('useLunar').checked = !!subscription.useLunar;
+        const endOfMonthEl = document.getElementById('endOfMonth');
+        if (endOfMonthEl) endOfMonthEl.checked = !!subscription.endOfMonth && !subscription.useLunar;
+
+        let rules = Array.isArray(subscription.reminderRules) ? subscription.reminderRules : null;
+        if (!rules || rules.length === 0) {
+          try {
+            const rr = await apiFetch('/api/subscriptions/' + id + '/reminders');
+            const body = await rr.json();
+            if (body && Array.isArray(body.rules)) rules = body.rules;
+          } catch (_) { /* ignore */ }
+        }
+        if (rules && rules.length > 0) {
+          const cloned = rules.map(function (r) {
+            return Object.assign({}, r, {
+              id: (crypto && crypto.randomUUID) ? crypto.randomUUID() : ('r-' + Math.random().toString(36).slice(2))
+            });
+          });
+          window.__pendingReminderRules = cloned;
+          if (typeof window.__setReminderRules === 'function') {
+            window.__setReminderRules(cloned);
+          }
+        }
+
+        setupModalEventListeners();
+        showToast('已填入克隆内容，确认后保存为新订阅', 'info', 3500);
+      } catch (err) {
+        console.error('克隆失败:', err);
+        showToast('克隆失败，请稍后再试', 'error');
+      } finally {
+        button.disabled = false;
+        button.innerHTML = original;
+      }
+    }
 
     // 自定义日期选择器功能
     class CustomDatePicker {
@@ -3088,8 +3241,33 @@ const lunarBiz = {
       }
       if (useLunar && !useLunar.dataset.bound) {
         useLunar.dataset.bound = 'true';
-        useLunar.addEventListener('change', calculateExpiryDate);
+        useLunar.addEventListener('change', function () {
+          const endOfMonthEl = document.getElementById('endOfMonth');
+          if (endOfMonthEl && useLunar.checked) {
+            endOfMonthEl.checked = false;
+            endOfMonthEl.disabled = true;
+          } else if (endOfMonthEl) {
+            endOfMonthEl.disabled = false;
+          }
+          calculateExpiryDate();
+        });
       }
+      const endOfMonth = document.getElementById('endOfMonth');
+      if (endOfMonth && !endOfMonth.dataset.bound) {
+        endOfMonth.dataset.bound = 'true';
+        endOfMonth.addEventListener('change', calculateExpiryDate);
+      }
+      document.querySelectorAll('.period-preset').forEach(function (btn) {
+        if (btn.dataset.bound) return;
+        btn.dataset.bound = 'true';
+        btn.addEventListener('click', function () {
+          const v = Number(btn.dataset.value) || 1;
+          const u = btn.dataset.unit || 'month';
+          document.getElementById('periodValue').value = String(v);
+          document.getElementById('periodUnit').value = u;
+          calculateExpiryDate();
+        });
+      });
       if (showLunar && !showLunar.dataset.bound) {
         showLunar.dataset.bound = 'true';
         showLunar.addEventListener('change', toggleLunarDisplay);
@@ -3183,13 +3361,19 @@ const lunarBiz = {
 		
 		
 	  } else {
-		// 公历推算
+		// 公历推算（支持「每月最后一天」）
 		const start = new Date(startDate);
-		const expiry = new Date(start);
+		const endOfMonthEl = document.getElementById('endOfMonth');
+		const endOfMonth = endOfMonthEl && endOfMonthEl.checked;
+		let expiry = new Date(start);
 		if (periodUnit === 'day') {
 		  expiry.setDate(start.getDate() + periodValue);
 		} else if (periodUnit === 'month') {
-		  expiry.setMonth(start.getMonth() + periodValue);
+		  if (endOfMonth) {
+		    expiry = new Date(start.getFullYear(), start.getMonth() + periodValue + 1, 0);
+		  } else {
+		    expiry.setMonth(start.getMonth() + periodValue);
+		  }
 		} else if (periodUnit === 'year') {
 		  expiry.setFullYear(start.getFullYear() + periodValue);
 		}
@@ -3260,7 +3444,8 @@ const lunarBiz = {
         reminderValue: reminderValue,
         reminderDays: reminderUnit === 'day' ? reminderValue : 0,
         reminderHours: reminderUnit === 'hour' ? reminderValue : undefined,
-        useLunar: document.getElementById('useLunar').checked
+        useLunar: document.getElementById('useLunar').checked,
+        endOfMonth: !!(document.getElementById('endOfMonth') && document.getElementById('endOfMonth').checked && !document.getElementById('useLunar').checked)
       };
       
       const submitButton = e.target.querySelector('button[type="submit"]');
@@ -3323,6 +3508,8 @@ const lunarBiz = {
           document.getElementById('expiryDate').value = subscription.expiryDate ? formatDateInputInTimezone(subscription.expiryDate, globalTimezone) : '';
           document.getElementById('periodValue').value = subscription.periodValue || 1;
           document.getElementById('periodUnit').value = subscription.periodUnit || 'month';
+          const endOfMonthEl = document.getElementById('endOfMonth');
+          if (endOfMonthEl) endOfMonthEl.checked = !!subscription.endOfMonth && !subscription.useLunar;
           const reminderUnit = subscription.reminderUnit || (subscription.reminderHours !== undefined ? 'hour' : 'day');
           let reminderValue;
           const reminderHint = document.getElementById('reminderHint');
@@ -3603,6 +3790,10 @@ const lunarBiz = {
       }
 
       let rules = [];
+      window.__setReminderRules = function (next) {
+        rules = Array.isArray(next) ? next.slice() : [];
+        render();
+      };
 
       function renderRow(rule) {
         const isAfter = rule.type === 'after_expiry';

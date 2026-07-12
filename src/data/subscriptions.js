@@ -179,11 +179,13 @@ async function createSubscription(subscription, env) {
     } else {
       if (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight && subscription.periodValue && subscription.periodUnit) {
         while (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight) {
+          const endOfMonth = !!subscription.endOfMonth && !useLunar;
           expiryDate = addCalendarPeriodInTimezone(
             expiryDate,
             subscription.periodValue,
             subscription.periodUnit,
-            timezone
+            timezone,
+            { endOfMonth }
           );
         }
       }
@@ -192,6 +194,7 @@ async function createSubscription(subscription, env) {
     const reminderSetting = resolveReminderSetting(subscription);
     const normalizedStartDate = startDate ? startDate.toISOString() : null;
     const normalizedExpiryDate = expiryDate.toISOString();
+    const endOfMonthFlag = !!subscription.endOfMonth && !useLunar;
 
     const initialPaymentDate = normalizedStartDate || now.utc.toISOString();
     const newSubscription = {
@@ -204,6 +207,7 @@ async function createSubscription(subscription, env) {
       expiryDate: normalizedExpiryDate,
       periodValue: subscription.periodValue || 1,
       periodUnit: subscription.periodUnit || 'month',
+      endOfMonth: endOfMonthFlag,
       reminderUnit: reminderSetting.unit,
       reminderValue: reminderSetting.value,
       reminderDays: reminderSetting.unit === 'day' ? reminderSetting.value : undefined,
@@ -293,13 +297,18 @@ async function updateSubscription(id, subscription, env) {
         } while (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight);
       }
     } else {
+      const endOfMonth =
+        subscription.endOfMonth !== undefined
+          ? !!subscription.endOfMonth && !useLunar
+          : !!existing.endOfMonth && !useLunar;
       if (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight && subscription.periodValue && subscription.periodUnit) {
         while (getTimezoneMidnightTimestamp(expiryDate, timezone) < todayMidnight) {
           expiryDate = addCalendarPeriodInTimezone(
             expiryDate,
             subscription.periodValue,
             subscription.periodUnit,
-            timezone
+            timezone,
+            { endOfMonth }
           );
         }
       }
@@ -363,6 +372,10 @@ async function updateSubscription(id, subscription, env) {
       expiryDate: expiryDate.toISOString(),
       periodValue: subscription.periodValue || existing.periodValue || 1,
       periodUnit: subscription.periodUnit || existing.periodUnit || 'month',
+      endOfMonth:
+        subscription.endOfMonth !== undefined
+          ? !!subscription.endOfMonth && !useLunar
+          : !!existing.endOfMonth && !useLunar,
       reminderUnit: reminderSetting.unit,
       reminderValue: reminderSetting.value,
       reminderDays: reminderSetting.unit === 'day' ? reminderSetting.value : undefined,
@@ -475,7 +488,8 @@ async function manualRenewSubscription(id, env, options = {}) {
         newStartDate,
         totalPeriodValue,
         subscription.periodUnit,
-        timezone
+        timezone,
+        { endOfMonth: !!subscription.endOfMonth }
       );
     }
 

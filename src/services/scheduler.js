@@ -309,11 +309,23 @@ function autoRenew(sub, now, timezone, config) {
       if (periodsAdded > 60) break; // 防御
     }
   } else {
+    // 公历：endOfMonth 时落到目标月最后一天（仅 month 单位）
     while (expiryDate <= now) {
       if (mode === 'reset') expiryDate = new Date(now);
-      if (sub.periodUnit === 'day') expiryDate.setDate(expiryDate.getDate() + sub.periodValue);
-      else if (sub.periodUnit === 'month') expiryDate.setMonth(expiryDate.getMonth() + sub.periodValue);
-      else if (sub.periodUnit === 'year') expiryDate.setFullYear(expiryDate.getFullYear() + sub.periodValue);
+      if (sub.periodUnit === 'day') {
+        expiryDate.setDate(expiryDate.getDate() + sub.periodValue);
+      } else if (sub.periodUnit === 'month') {
+        if (sub.endOfMonth) {
+          const y = expiryDate.getFullYear();
+          const m = expiryDate.getMonth() + sub.periodValue;
+          // 目标月最后一天：下月 day=0
+          expiryDate = new Date(y, m + 1, 0);
+        } else {
+          expiryDate.setMonth(expiryDate.getMonth() + sub.periodValue);
+        }
+      } else if (sub.periodUnit === 'year') {
+        expiryDate.setFullYear(expiryDate.getFullYear() + sub.periodValue);
+      }
       periodsAdded++;
       if (periodsAdded > 120) break;
     }

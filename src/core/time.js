@@ -363,27 +363,61 @@ export function getTodayDateStringInTimezone(timezone = 'UTC', now) {
  * @param {number} amount
  * @param {'day'|'month'|'year'} unit
  * @param {string} [timezone='UTC']
+ * @param {{ endOfMonth?: boolean }} [options] endOfMonth=true 时（仅公历 month）落到目标月最后一天
  * @returns {Date}
  */
-export function addCalendarPeriodInTimezone(value, amount, unit, timezone = 'UTC') {
+export function addCalendarPeriodInTimezone(value, amount, unit, timezone = 'UTC', options = {}) {
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return new Date(Number.NaN);
 
   const parts = getTimezoneDateParts(d, timezone);
-  const temp = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, 0, 0, 0));
+  let year = parts.year;
+  let month = parts.month;
+  let day = parts.day;
+
   if (unit === 'day') {
+    const temp = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
     temp.setUTCDate(temp.getUTCDate() + amount);
+    year = temp.getUTCFullYear();
+    month = temp.getUTCMonth() + 1;
+    day = temp.getUTCDate();
   } else if (unit === 'month') {
-    temp.setUTCMonth(temp.getUTCMonth() + amount);
+    // 先移到目标月，再用 day=0 取月末，或保留原日（JS overflow 行为）
+    const targetMonthIndex = month - 1 + amount;
+    if (options && options.endOfMonth) {
+      // 目标月最后一天：下月的第 0 天
+      const last = new Date(Date.UTC(year, targetMonthIndex + 1, 0));
+      year = last.getUTCFullYear();
+      month = last.getUTCMonth() + 1;
+      day = last.getUTCDate();
+    } else {
+      const temp = new Date(Date.UTC(year, targetMonthIndex, day, 0, 0, 0));
+      // 若溢出到下月（如 1/31 + 1 月），钳制到目标月最后一天更符合「同号续订」预期
+      // 这里保持与历史 JS setUTCMonth 一致：允许溢出，避免改变既有用户行为
+      year = temp.getUTCFullYear();
+      month = temp.getUTCMonth() + 1;
+      day = temp.getUTCDate();
+    }
   } else if (unit === 'year') {
-    temp.setUTCFullYear(temp.getUTCFullYear() + amount);
+    if (options && options.endOfMonth && month === 2 && day >= 28) {
+      // 年末月场景少见；仍按年推进后取该月最后一天
+      const last = new Date(Date.UTC(year + amount, month, 0));
+      year = last.getUTCFullYear();
+      month = last.getUTCMonth() + 1;
+      day = last.getUTCDate();
+    } else {
+      const temp = new Date(Date.UTC(year + amount, month - 1, day, 0, 0, 0));
+      year = temp.getUTCFullYear();
+      month = temp.getUTCMonth() + 1;
+      day = temp.getUTCDate();
+    }
   }
 
   const ts = getTimestampForTimezoneParts(
     {
-      year: temp.getUTCFullYear(),
-      month: temp.getUTCMonth() + 1,
-      day: temp.getUTCDate(),
+      year,
+      month,
+      day,
       hour: 0,
       minute: 0,
       second: 0
