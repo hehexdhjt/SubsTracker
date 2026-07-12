@@ -38,7 +38,8 @@ async function handleTestNotification(request, env) {
       const testConfig = {
         ...config,
         TG_BOT_TOKEN: typeof body.TG_BOT_TOKEN === 'string' && body.TG_BOT_TOKEN.trim().length > 0 ? body.TG_BOT_TOKEN.trim() : config.TG_BOT_TOKEN,
-        TG_CHAT_ID: typeof body.TG_CHAT_ID === 'string' && body.TG_CHAT_ID.trim().length > 0 ? body.TG_CHAT_ID.trim() : config.TG_CHAT_ID
+        TG_CHAT_ID: typeof body.TG_CHAT_ID === 'string' && body.TG_CHAT_ID.trim().length > 0 ? body.TG_CHAT_ID.trim() : config.TG_CHAT_ID,
+        TG_TOPIC_ID: typeof body.TG_TOPIC_ID === 'string' && body.TG_TOPIC_ID.trim().length > 0 ? body.TG_TOPIC_ID.trim() : config.TG_TOPIC_ID
       };
 
       const content = '*测试通知*\n\n这是一条测试通知，用于验证Telegram通知功能是否正常工作。\n\n发送时间: ' + formatBeijingTime();

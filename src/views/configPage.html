@@ -345,6 +345,11 @@
                 <label for="tgChatId" class="block text-sm font-medium text-gray-700">Chat ID</label>
                 <input type="text" id="tgChatId" placeholder="可从 @userinfobot 获取" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
               </div>
+              <div>
+                <label for="tgTopicId" class="block text-sm font-medium text-gray-700">Topic ID（可选）</label>
+                <input type="text" id="tgTopicId" placeholder="Forum 群组话题 ID，对应 message_thread_id" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                <p class="mt-1 text-xs text-gray-500">仅在开启 Topics 的群组中填写；留空则发送到普通会话/群组。</p>
+              </div>
             </div>
             <div class="flex justify-end">
               <button type="button" id="testTelegramBtn" class="btn-secondary text-white px-4 py-2 rounded-md text-sm font-medium">
@@ -784,6 +789,8 @@
 
         // 非敏感字段正常回显
         document.getElementById('tgChatId').value = config.TG_CHAT_ID || '';
+        const tgTopicEl = document.getElementById('tgTopicId');
+        if (tgTopicEl) tgTopicEl.value = config.TG_TOPIC_ID || '';
         document.getElementById('webhookMethod').value = config.WEBHOOK_METHOD || 'POST';
         document.getElementById('webhookTemplate').value = config.WEBHOOK_TEMPLATE || '';
         document.getElementById('wechatbotMsgType').value = config.WECHATBOT_MSG_TYPE || 'text';
@@ -1007,6 +1014,7 @@
 
         // 非敏感字段正常提交
         TG_CHAT_ID: document.getElementById('tgChatId').value.trim(),
+        TG_TOPIC_ID: (document.getElementById('tgTopicId') && document.getElementById('tgTopicId').value.trim()) || '',
         WEBHOOK_METHOD: document.getElementById('webhookMethod').value,
         WEBHOOK_TEMPLATE: document.getElementById('webhookTemplate').value.trim(),
         SHOW_LUNAR: document.getElementById('showLunarGlobal').checked,
@@ -1126,6 +1134,8 @@
       // 方案 B：敏感字段不回显。测试通知时如果用户没填，就按“使用服务器已保存的配置”处理。
       if (type === 'telegram') {
         config.TG_CHAT_ID = document.getElementById('tgChatId').value.trim();
+        const topicEl = document.getElementById('tgTopicId');
+        if (topicEl) config.TG_TOPIC_ID = topicEl.value.trim();
         const token = document.getElementById('tgBotToken').value.trim();
         if (token) config.TG_BOT_TOKEN = token;
       } else if (type === 'notifyx') {

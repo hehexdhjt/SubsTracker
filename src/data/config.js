@@ -5,6 +5,7 @@ const DEFAULT_CONFIG = {
   ADMIN_PASSWORD: 'password',
   TG_BOT_TOKEN: '',
   TG_CHAT_ID: '',
+  TG_TOPIC_ID: '',
   NOTIFYX_API_KEY: '',
   WEBHOOK_URL: '',
   WEBHOOK_METHOD: 'POST',

@@ -19,7 +19,7 @@
 
 | 渠道 | 状态 | 配置项 |
 |------|------|--------|
-| Telegram | ✅ MarkdownV2 + 失败降级纯文本 | Bot Token + Chat ID |
+| Telegram | ✅ MarkdownV2 + 失败降级纯文本 | Bot Token + Chat ID + 可选 Topic ID |
 | NotifyX | ✅ | API Key |
 | Webhook | ✅ 支持自定义 Header 与消息模板 | URL + 模板（含 `{{title}} {{content}} {{daysRemaining}}` 等） |
 | 企业微信机器人 | ✅ text/markdown + @ 提醒 | Webhook URL |

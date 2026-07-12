@@ -8,6 +8,35 @@
 import { escapeMarkdownV2, ok, fail, errorMessage } from './channel.js';
 
 /** @type {import('./channel.js').Channel} */
+/**
+ * 可选 Topic ID（Forum 群组 message_thread_id）。空字符串视为未配置。
+ * @param {any} config
+ * @returns {number|undefined}
+ */
+function resolveTopicId(config) {
+  const raw = config && config.TG_TOPIC_ID != null ? String(config.TG_TOPIC_ID).trim() : '';
+  if (!raw) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+}
+
+/**
+ * @param {any} config
+ * @param {string} text
+ * @param {string} [parseMode]
+ */
+function buildSendBody(config, text, parseMode) {
+  /** @type {Record<string, any>} */
+  const body = {
+    chat_id: config.TG_CHAT_ID,
+    text
+  };
+  if (parseMode) body.parse_mode = parseMode;
+  const topicId = resolveTopicId(config);
+  if (topicId !== undefined) body.message_thread_id = topicId;
+  return body;
+}
+
 export const telegramChannel = {
   name: 'telegram',
 
@@ -31,11 +60,7 @@ export const telegramChannel = {
       const r = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: config.TG_CHAT_ID,
-          text: escaped,
-          parse_mode: 'MarkdownV2'
-        })
+        body: JSON.stringify(buildSendBody(config, escaped, 'MarkdownV2'))
       });
       const result = await r.json();
 
@@ -46,7 +71,7 @@ export const telegramChannel = {
         const r2 = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: config.TG_CHAT_ID, text: fullText })
+          body: JSON.stringify(buildSendBody(config, fullText))
         });
         const result2 = await r2.json();
         return result2.ok

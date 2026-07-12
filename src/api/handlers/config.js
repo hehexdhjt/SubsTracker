@@ -83,6 +83,7 @@ async function handleUpdateConfig(request, env) {
 
       TG_BOT_TOKEN: mergeSecretField(config, newConfig, 'TG_BOT_TOKEN', clearSecretFields),
       TG_CHAT_ID: newConfig.TG_CHAT_ID || '',
+      TG_TOPIC_ID: (newConfig.TG_TOPIC_ID != null ? String(newConfig.TG_TOPIC_ID) : '').trim(),
 
       NOTIFYX_API_KEY: mergeSecretField(config, newConfig, 'NOTIFYX_API_KEY', clearSecretFields),
 
