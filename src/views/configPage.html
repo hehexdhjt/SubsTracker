@@ -221,18 +221,25 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div>
               <label for="notificationHours" class="block text-sm font-medium text-gray-700">
-                通知时段
-                <span id="tzLabelInline" class="text-indigo-600 font-semibold">（按你的时区）</span>
+                允许发送的小时
+                <span id="tzLabelInline" class="text-indigo-600 font-semibold">（按下方时区）</span>
               </label>
-              <input type="text" id="notificationHours" placeholder="例如：08, 12, 20 或输入 * 表示全天"
+              <input type="text" id="notificationHours" placeholder="例如：8 或 08, 12, 20；留空或 * = 每小时都可发"
                 class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-              <p class="mt-1 text-sm text-gray-500">可输入多个小时，使用逗号或空格分隔；留空则全天发送（仍受 Cron 每小时触发限制）</p>
-              <div id="tzWindowPreview" class="mt-2 text-sm font-medium"></div>
+              <p class="mt-1 text-sm text-gray-500">
+                填 0–23 的整点（可多个，逗号分隔）。系统每小时检查一次：只有「当前整点」落在列表里才会发提醒。
+                <strong>留空或填 *</strong> 表示每个整点都可以发。
+              </p>
+              <div id="tzWindowPreview" class="mt-2 p-3 rounded-md border border-gray-200 bg-gray-50 text-sm leading-relaxed"></div>
             </div>
-            <div class="bg-amber-50 border border-amber-200 rounded-md p-3 text-sm text-amber-800">
-              <p class="font-semibold mb-1"><i class="fas fa-info-circle"></i> 时区语义变更</p>
-              <p>本字段在 按 <b>你设置的时区</b> 解释。例如想让北京时间 08:00 收到提醒，<code>TIMEZONE=Asia/Shanghai</code> 时填 <code>08</code>。</p>
-              <p class="mt-1">若你之前是 老版本用户并按 UTC 填了小时数，请重新调整。Cron 仍每小时触发。</p>
+            <div class="bg-blue-50 border border-blue-200 rounded-md p-3 text-sm text-blue-900">
+              <p class="font-semibold mb-1"><i class="fas fa-lightbulb mr-1"></i>怎么理解？</p>
+              <ul class="list-disc pl-5 space-y-1">
+                <li>上面选的<strong>时区</strong>决定「现在几点」——中国用户一般选 <b>Asia/Shanghai（北京时间）</b>。</li>
+                <li>填 <code>08</code> = 只在<strong>北京时间早上 8 点那一小时</strong>发（约 8:00–8:59）。</li>
+                <li>现在若是 19 点，填了 08，则<strong>不会发</strong>，任务历史会写「不在允许发送的小时」——这是正常的。</li>
+                <li>改完后请点「保存配置」才会生效；下方预览会按输入框内容实时判断。</li>
+              </ul>
             </div>
           </div>
           <div class="mb-6">
@@ -888,7 +895,7 @@
           const hours = Array.isArray(config.NOTIFICATION_HOURS) ? config.NOTIFICATION_HOURS : [];
           notificationHoursInput.value = hours.join(', ');
         }
-        
+
         // 加载农历显示设置
         document.getElementById('showLunarGlobal').checked = config.SHOW_LUNAR === true;
 
@@ -902,6 +909,11 @@
         });
 
         toggleNotificationConfigs(enabledNotifiers);
+
+        // 配置加载完成后再刷新「是否可发送」预览（避免空输入被当成全天）
+        if (typeof window.__refreshNotificationHoursPreview === 'function') {
+          window.__refreshNotificationHoursPreview();
+        }
       } catch (error) {
         console.error('加载配置失败:', error);
         showToast('加载配置失败，请刷新页面重试', 'error');
@@ -1551,8 +1563,8 @@
     }
 
     // ───────────────────────────────────────────────────────
-    // 本次：通知时段实时预览（按用户配置的 TIMEZONE）
-    // 当用户改 TIMEZONE / 改 notificationHours 时，下方提示实时更新
+    // 通知小时实时预览（与调度器同一套规则）
+    // 注意：必须在 loadConfig 写入输入框之后再刷新，否则会误显示「空=全天」
     // ───────────────────────────────────────────────────────
     (function () {
       const tzSelect = document.getElementById('timezone');
@@ -1560,6 +1572,22 @@
       const labelInline = document.getElementById('tzLabelInline');
       const preview = document.getElementById('tzWindowPreview');
       if (!tzSelect || !hoursInput || !preview || !labelInline) return;
+
+      const TZ_LABELS = {
+        'Asia/Shanghai': '北京时间',
+        'Asia/Hong_Kong': '香港时间',
+        'Asia/Taipei': '台北时间',
+        'Asia/Tokyo': '东京时间',
+        'Asia/Singapore': '新加坡时间',
+        'UTC': '世界协调时(UTC)',
+        'America/New_York': '纽约时间',
+        'America/Los_Angeles': '洛杉矶时间',
+        'Europe/London': '伦敦时间'
+      };
+
+      function friendlyTz(tz) {
+        return TZ_LABELS[tz] || tz;
+      }
 
       function currentTzHour(tz) {
         try {
@@ -1570,7 +1598,7 @@
           let h = parts.find(p => p.type === 'hour')?.value || '00';
           const m = parts.find(p => p.type === 'minute')?.value || '00';
           if (h === '24') h = '00';
-          return { hh: String(h).padStart(2, '0'), mm: m };
+          return { hh: String(h).padStart(2, '0'), mm: String(m).padStart(2, '0') };
         } catch {
           return { hh: '??', mm: '??' };
         }
@@ -1588,26 +1616,36 @@
 
       function update() {
         const tz = tzSelect.value || 'UTC';
-        labelInline.textContent = '（按 ' + tz + '）';
+        const tzName = friendlyTz(tz);
+        labelInline.textContent = '（按' + tzName + '）';
         const { hh, mm } = currentTzHour(tz);
         const hours = parseHours(hoursInput.value);
-        const inWindow =
-          hours.length === 0 ||
-          hours.includes('*') ||
-          hours.includes(hh);
+        const allowAll = hours.length === 0 || hours.includes('*');
+        const inWindow = allowAll || hours.includes(hh);
+
+        let statusHtml;
+        if (allowAll) {
+          statusHtml = '<span class="text-green-700 font-medium">✓ 当前会允许发送</span>'
+            + '<div class="text-xs text-gray-600 mt-1">未限制小时（留空或 *）= 每个整点检查时都可以发。</div>';
+        } else if (inWindow) {
+          statusHtml = '<span class="text-green-700 font-medium">✓ 当前整点在允许列表内，会发送</span>'
+            + '<div class="text-xs text-gray-600 mt-1">允许的小时：<b>' + hours.join('、') + '</b>；现在是 <b>' + hh + ':' + mm + '</b>（' + tzName + '）。</div>';
+        } else {
+          statusHtml = '<span class="text-amber-700 font-medium">✗ 当前不会发送</span>'
+            + '<div class="text-xs text-gray-600 mt-1">你只允许在 <b>' + hours.join('、') + '</b> 点发送；现在是 <b>' + hh + ':' + mm + '</b>（' + tzName + '）。'
+            + '定时任务仍会每小时跑一次，但不推送，任务历史会记「不在允许发送的小时」——这是正常跳过。</div>';
+        }
+
         preview.innerHTML =
-          '当前 <b>' + tz + '</b> 时间约 <b>' + hh + ':' + mm + '</b>：'
-          + (inWindow
-              ? '<span class="text-green-600">✓ 在通知时段内</span>'
-              : '<span class="text-amber-600">✗ 不在通知时段内（下次触发将跳过发送）</span>')
-          + (hours.length === 0
-              ? '<span class="ml-2 text-gray-500 text-xs">（时段为空 = 全天可发送）</span>'
-              : '<span class="ml-2 text-gray-500 text-xs">（已配置：' + hours.join(', ') + '）</span>');
+          '<div class="text-gray-800">' + statusHtml + '</div>'
+          + '<div class="text-xs text-gray-500 mt-2">时区代码：' + tz + ' · 预览仅反映输入框内容，保存后调度器才用服务器上的值。</div>';
       }
+
+      window.__refreshNotificationHoursPreview = update;
 
       tzSelect.addEventListener('change', update);
       hoursInput.addEventListener('input', update);
-      // 启动时先 fire 一次，并每 30s 自动刷新（小时跨边界时也能更新）
+      hoursInput.addEventListener('change', update);
       setTimeout(update, 200);
       setInterval(update, 30000);
     })();

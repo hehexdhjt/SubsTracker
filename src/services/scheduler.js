@@ -201,7 +201,7 @@ export async function checkExpiringSubscriptions(env) {
         sentCount: 0,
         autoRenewedCount,
         status: 'skipped',
-        reason: `当前用户 TZ 小时 ${now.hourString} 不在配置时段 [${normalizedHours.join(',') || '空'}] 内`
+        reason: `当前${timezone} ${now.hourString}点不在允许发送的小时 [${normalizedHours.join(',') || '未限制=每小时'}] 内（正常跳过，不会发通知）`
       });
       return entry;
     }
