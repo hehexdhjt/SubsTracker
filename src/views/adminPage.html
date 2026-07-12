@@ -670,12 +670,12 @@
           <div class="flex items-center justify-between mb-3">
             <label class="block text-sm font-semibold text-gray-700">
               <i class="fas fa-bell text-indigo-500 mr-1"></i> 提醒规则
-              <span class="text-xs font-normal text-gray-500 ml-2">（支持多条规则；新订阅自动应用智能预设）</span>
+              <span class="text-xs font-normal text-gray-500 ml-2">（支持多条规则；新订阅默认 7/3/1 天 + 当天）</span>
             </label>
             <div class="flex items-center space-x-2">
               <button type="button" id="reminderRulesPresetBtn"
                 class="text-xs px-2 py-1 bg-white border border-gray-300 rounded hover:bg-gray-50 text-gray-700">
-                <i class="fas fa-magic"></i> 应用预设(7/3/1/0)
+                <i class="fas fa-magic"></i> 应用预设(7/3/1/当天)
               </button>
               <button type="button" id="reminderRulesAddBtn"
                 class="text-xs px-2 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700">
@@ -686,8 +686,11 @@
           <div id="reminderRulesContainer" class="space-y-2">
             <!-- 规则行由 JS 注入 -->
           </div>
-          <p class="mt-2 text-xs text-gray-500">
-            类型说明：到期前 N 天/小时 触发；到期当天；到期后每 X 小时重复（直到续费/手动确认）。
+          <p class="mt-2 text-xs text-gray-500 leading-relaxed">
+            <strong class="text-gray-600">触发语义（精确匹配）：</strong>
+            「到期前 N 天」仅在剩余天数<strong>正好等于 N</strong> 时发送一次，不会在第 N-1…1 天自动连发。
+            若希望 7/3/1 天都提醒，请添加多条规则（可用上方预设）。
+            类型：到期前 = 精确日/小时；到期当天；到期后 = 每 X 小时重复直到续费/手动确认。
           </p>
           <!-- 兜底字段：旧调度器路径需要这两个值；当 reminderRules 为空时仍生效 -->
           <input type="hidden" id="reminderUnit" value="day">
