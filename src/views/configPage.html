@@ -139,6 +139,10 @@
   <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     <div class="bg-white rounded-lg shadow-md p-6">
       <h2 class="text-2xl font-bold text-gray-800 mb-6">系统配置</h2>
+      <div id="defaultPasswordBanner" class="hidden mb-4 p-3 rounded-md border border-amber-300 bg-amber-50 text-amber-900 text-sm">
+        <i class="fas fa-exclamation-triangle mr-1"></i>
+        检测到仍可能使用默认管理员密码。请立即修改下方「管理员密码」并保存，避免公网被接管。
+      </div>
       
       <form id="configForm" class="space-y-8">
         <div class="border-b border-gray-200 pb-6">
@@ -820,6 +824,11 @@
         // 3) 如需清空，请点对应的“清空”按钮（会在保存时生效）。
 
         document.getElementById('adminUsername').value = config.ADMIN_USERNAME || '';
+        const _banner = document.getElementById('defaultPasswordBanner');
+        if (_banner) {
+          // 无法读取密码；用户名仍为 admin 时提示改密（默认部署风险）
+          _banner.classList.toggle('hidden', (config.ADMIN_USERNAME || 'admin') !== 'admin');
+        }
         document.getElementById('themeModeSelect').value = config.THEME_MODE || 'system';  // 回显主题设置
 
         // 非敏感字段正常回显

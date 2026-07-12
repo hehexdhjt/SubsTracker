@@ -126,24 +126,24 @@ KV: config | sub_index | sub:{id} | reminder_rules:{id} | notify_log:* | sched_l
 | P0-1 | auth | JWT 不校验 exp | 过期 token 仍可用 | 登录后改客户端时间或保存旧 cookie | 会话永不过期 | 校验 exp | **已修** |
 | P0-2 | api/notify | 第三方 API 被 JWT 挡住 | 无 cookie 永远 401 | curl POST /api/notify/TOKEN | 集成不可用 | JWT 前放行 | **已修** |
 | P0-3 | admin UI | notes/category XSS | innerHTML 未转义 | 备注写入 script | 管理端 XSS | escapeHtml | **已修** |
-| P0-4 | backup | replace 非原子 + 弱校验 | 可清空后写入残缺 sub | 覆盖导入残缺 JSON | 数据丢失 | 校验+两阶段/先备份 | 待办 |
-| P0-5 | 部署 | 默认 admin/password | 文档即默认值 | 公网裸奔 | 账号接管 | 强制改密/启动告警 | 待办 |
-| P0-6 | scheduler | 日规则 + 全天空窗 → 每小时可重复发 | dedupe 键含小时 `ymdh`；`NOTIFICATION_HOURS=[]` 时全天 in-window | 到期前 N 天当天 cron 每小时跑 | 同一天最多约 24 条 | 日规则按 `YYYYMMDD` 去重，或仅在配置时段首小时发 | 待办 |
-| P0-7 | scheduler | autoRenew 用运行时本地 Date | 与用户 TIMEZONE / 手动续订路径不一致 | 跨时区或月末订阅自动续订 | 到期日漂移 | 统一 `addCalendarPeriodInTimezone` | 待办 |
-| P0-8 | scheduler | 去重键在发送成功前写入 | 渠道失败后同小时不再重试 | 网络抖动导致发送失败 | 漏提醒 | 成功后再写 dedupe 或可重试状态 | 待办 |
+| P0-4 | backup | replace 非原子 + 弱校验 | 可清空后写入残缺 sub | 覆盖导入残缺 JSON | 数据丢失 | 校验+两阶段/先备份 | **已修（校验+空列表拒绝+配置后写）** |
+| P0-5 | 部署 | 默认 admin/password | 文档即默认值 | 公网裸奔 | 账号接管 | 强制改密/启动告警 | **已缓解（登录/配置页提示）** |
+| P0-6 | scheduler | 日规则 + 全天空窗 → 每小时可重复发 | dedupe 键含小时 `ymdh`；`NOTIFICATION_HOURS=[]` 时全天 in-window | 到期前 N 天当天 cron 每小时跑 | 同一天最多约 24 条 | 日规则按 `YYYYMMDD` 去重，或仅在配置时段首小时发 | **已修** |
+| P0-7 | scheduler | autoRenew 用运行时本地 Date | 与用户 TIMEZONE / 手动续订路径不一致 | 跨时区或月末订阅自动续订 | 到期日漂移 | 统一 `addCalendarPeriodInTimezone` | **已修** |
+| P0-8 | scheduler | 去重键在发送成功前写入 | 渠道失败后同小时不再重试 | 网络抖动导致发送失败 | 漏提醒 | 成功后再写 dedupe 或可重试状态 | **已修** |
 
 ### P1 — 强烈建议
 
 | ID | 模块 | 简述 | 建议 | 状态 |
 |----|------|------|------|------|
 | P1-1 | subscriptions | 删除未清 reminder_rules | delete 时 clearForSubscription | **已修** |
-| P1-2 | admin | fetch 劫持同步规则 | 表单显式带 reminderRules；服务端 update 写 rules | 待办 |
-| P1-3 | scheduler | after_expiry 无 lastFireAtIso | 持久化 lastFire 或按日 dedupe | 待办 |
-| P1-4 | api | 非法 JSON → 500 | 统一 readJson → 400 | 待办 |
-| P1-5 | api | 错误响应不统一 | 统一 envelope；GET 缺资源 404 | 待办 |
+| P1-2 | admin | fetch 劫持同步规则 | 表单显式带 reminderRules；服务端 update 写 rules | **已修** |
+| P1-3 | scheduler | after_expiry 无 lastFireAtIso | 持久化 lastFire 或按日 dedupe | **已修** |
+| P1-4 | api | 非法 JSON → 500 | 统一 readJson → 400 | **部分（subscriptions POST/PUT）** |
+| P1-5 | api | 错误响应不统一 | 统一 envelope；GET 缺资源 404 | **部分（GET sub 404）** |
 | P1-6 | notify | token 可走 URL path/query | 文档引导 Header；timing-safe 比较 | 待办 |
-| P1-7 | notify-logs | 401 不跳转登录 | 复用 apiFetch | 待办 |
-| P1-8 | scheduler | autoRenew 与 time 工具不一致 | 统一 addCalendarPeriodInTimezone | 待办 |
+| P1-7 | notify-logs | 401 不跳转登录 | 复用 apiFetch | **已修（ApiClient 401→/）** |
+| P1-8 | scheduler | autoRenew 与 time 工具不一致 | 统一 addCalendarPeriodInTimezone | **已修** |
 
 ### P2 — 建议优化
 
@@ -153,7 +153,7 @@ KV: config | sub_index | sub:{id} | reminder_rules:{id} | notify_log:* | sched_l
 | P2-2 | 暗色/动态 badge 对比度 | 补 dark class |
 | P2-3 | a11y：对话框、图标按钮名 | role=dialog / aria-label |
 | P2-4 | 渠道无 fetch timeout | AbortSignal.timeout |
-| P2-5 | 死代码 theme-resources.js、updateConfig | 删除或接入 |
+| P2-5 | 死代码 theme-resources.js、updateConfig | 删除或接入 | **已删** |
 | P2-6 | 汇率未知币种 | 显式警告或排除统计 |
 | P2-7 | 备份 merge 旧 rules 残留 | 无 rules 时可选清空 |
 | P2-8 | 双轨 legacy 提醒字段 | 中期只读 rules，废弃 legacy |

@@ -36,7 +36,11 @@ import * as schedulerLogsRepo from '../data/scheduler-logs.repo.js';
 import {
   MS_PER_HOUR,
   getNowInTimezone,
-  getDaysBetween
+  getDaysBetween,
+  getTimezoneDateParts,
+  getTimezoneMidnightTimestamp,
+  addCalendarPeriodInTimezone,
+  getTimestampForTimezoneParts
 } from '../core/time.js';
 import { formatNotificationContent } from './notify/reminder.js';
 import { dispatch } from './notify/dispatch.js';
@@ -44,6 +48,41 @@ import { shouldFire } from './notify/reminder-engine.js';
 import { lunarCalendar, lunarBiz } from '../core/lunar.js';
 
 const DEDUPE_TTL_SEC = 60 * 60 * 48; // 48h
+const LAST_FIRE_TTL_SEC = 60 * 60 * 24 * 60; // 60 天
+
+/**
+ * 日级规则（before_expiry/days、on_expiry）按本地日期去重；小时级与 after_expiry 按本地小时。
+ * @param {import('../data/reminders.repo.js').ReminderRule} rule
+ * @param {{ year: number, month: number, day: number, hourString: string }} nowParts
+ */
+function buildDedupeBucket(rule, nowParts) {
+  const ymd = `${nowParts.year}${String(nowParts.month).padStart(2, '0')}${String(nowParts.day).padStart(2, '0')}`;
+  const isDayRule =
+    rule.type === 'on_expiry' ||
+    (rule.type === 'before_expiry' && rule.unit !== 'hours');
+  return isDayRule ? ymd : `${ymd}${nowParts.hourString}`;
+}
+
+/**
+ * @param {{ SUBSCRIPTIONS_KV: KVNamespace }} env
+ * @param {string} subId
+ * @param {string} ruleId
+ */
+async function readLastFireAt(env, subId, ruleId) {
+  return env.SUBSCRIPTIONS_KV.get(`notify_lastfire:${subId}:${ruleId}`);
+}
+
+/**
+ * @param {{ SUBSCRIPTIONS_KV: KVNamespace }} env
+ * @param {string} subId
+ * @param {string} ruleId
+ * @param {string} iso
+ */
+async function writeLastFireAt(env, subId, ruleId, iso) {
+  await env.SUBSCRIPTIONS_KV.put(`notify_lastfire:${subId}:${ruleId}`, iso, {
+    expirationTtl: LAST_FIRE_TTL_SEC
+  });
+}
 
 /**
  * 入口：被 Cron 触发的 scheduled() 调用。
@@ -116,14 +155,25 @@ export async function checkExpiringSubscriptions(env) {
         }
       }
 
-      // 加载规则；老订阅没有规则时，用 legacyFieldToRule 现场转一条
+      // 加载规则；老订阅没有规则时，用稳定 id 的 legacy 规则（避免每 tick 新 UUID 打穿 dedupe）
       let rules = await remindersRepo.listForSubscription(env, subscription.id);
       if (rules.length === 0) {
-        rules = [remindersRepo.legacyFieldToRule(subscription)];
+        const legacy = remindersRepo.legacyFieldToRule(subscription);
+        legacy.id = `legacy:${subscription.id}`;
+        rules = [legacy];
       }
 
       for (const rule of rules) {
-        const decision = shouldFire(rule, { daysDiff, hoursDiff, nowIso: now.utc.toISOString() });
+        const lastFireAtIso =
+          rule.type === 'after_expiry'
+            ? (await readLastFireAt(env, subscription.id, rule.id)) || undefined
+            : undefined;
+        const decision = shouldFire(rule, {
+          daysDiff,
+          hoursDiff,
+          nowIso: now.utc.toISOString(),
+          lastFireAtIso
+        });
         if (!decision.fire) continue;
         matchedCount++;
         candidates.push({ sub: subscription, rule, daysDiff, hoursDiff });
@@ -156,21 +206,24 @@ export async function checkExpiringSubscriptions(env) {
       return entry;
     }
 
-    // 在时段：去重 + 发送
-    /** @type {Array<{ sub: any, rule: any, daysDiff: number, hoursDiff: number }>} */
+    // 在时段：先查重（不预占），发送成功后再写 dedupe / lastFire
+    /** @type {Array<{ sub: any, rule: any, daysDiff: number, hoursDiff: number, dedupeKey: string }>} */
     const ready = [];
-    const ymdhLocal = `${now.parts.year}${String(now.parts.month).padStart(2, '0')}${String(
-      now.parts.day
-    ).padStart(2, '0')}${now.hourString}`;
+    const nowParts = {
+      year: now.parts.year,
+      month: now.parts.month,
+      day: now.parts.day,
+      hourString: now.hourString
+    };
     for (const c of candidates) {
-      const dedupeKey = `notify_dedupe:${c.sub.id}:${c.rule.id}:${ymdhLocal}`;
+      const bucket = buildDedupeBucket(c.rule, nowParts);
+      const dedupeKey = `notify_dedupe:${c.sub.id}:${c.rule.id}:${bucket}`;
       const exists = await env.SUBSCRIPTIONS_KV.get(dedupeKey);
       if (exists) {
         dedupedCount++;
         continue;
       }
-      await env.SUBSCRIPTIONS_KV.put(dedupeKey, '1', { expirationTtl: DEDUPE_TTL_SEC });
-      ready.push(c);
+      ready.push({ ...c, dedupeKey });
     }
 
     if (ready.length === 0) {
@@ -227,6 +280,19 @@ export async function checkExpiringSubscriptions(env) {
       }
     );
     sentCount = dispatchResult.successCount;
+
+    // 仅在至少一渠道成功时写入去重与 lastFire，失败可在后续 tick 重试
+    if (dispatchResult.successCount > 0) {
+      const firedAt = now.utc.toISOString();
+      await Promise.all(
+        ready.map(async (c) => {
+          await env.SUBSCRIPTIONS_KV.put(c.dedupeKey, '1', { expirationTtl: DEDUPE_TTL_SEC });
+          if (c.rule.type === 'after_expiry') {
+            await writeLastFireAt(env, c.sub.id, c.rule.id, firedAt);
+          }
+        })
+      );
+    }
 
     const entry = await schedulerLogsRepo.writeLog(env, {
       startedAt: startedAtIso,
@@ -292,40 +358,50 @@ export async function checkExpiringSubscriptions(env) {
  */
 function autoRenew(sub, now, timezone, config) {
   const mode = sub.subscriptionMode || 'cycle';
+  const tz = timezone || 'UTC';
   let expiryDate = new Date(sub.expiryDate);
   let periodsAdded = 0;
+  const nowMidnight = getTimezoneMidnightTimestamp(now, tz);
+
+  /**
+   * @param {number} y
+   * @param {number} m
+   * @param {number} d
+   */
+  function atTimezoneMidnight(y, m, d) {
+    const ts = getTimestampForTimezoneParts(
+      { year: y, month: m, day: d, hour: 0, minute: 0, second: 0 },
+      tz
+    );
+    return new Date(ts);
+  }
 
   if (sub.useLunar) {
-    let lunar = lunarCalendar.solar2lunar(
-      expiryDate.getFullYear(),
-      expiryDate.getMonth() + 1,
-      expiryDate.getDate()
-    );
-    while (expiryDate <= now) {
+    let parts = getTimezoneDateParts(expiryDate, tz);
+    let lunar = lunarCalendar.solar2lunar(parts.year, parts.month, parts.day);
+    while (getTimezoneMidnightTimestamp(expiryDate, tz) <= nowMidnight) {
+      if (!lunar) break;
       lunar = lunarBiz.addLunarPeriod(lunar, sub.periodValue, sub.periodUnit);
       const solar = lunarBiz.lunar2solar(lunar);
-      expiryDate = new Date(solar.year, solar.month - 1, solar.day);
+      if (!solar) break;
+      expiryDate = atTimezoneMidnight(solar.year, solar.month, solar.day);
       periodsAdded++;
-      if (periodsAdded > 60) break; // 防御
+      if (periodsAdded > 60) break;
     }
   } else {
-    // 公历：endOfMonth 时落到目标月最后一天（仅 month 单位）
-    while (expiryDate <= now) {
-      if (mode === 'reset') expiryDate = new Date(now);
-      if (sub.periodUnit === 'day') {
-        expiryDate.setDate(expiryDate.getDate() + sub.periodValue);
-      } else if (sub.periodUnit === 'month') {
-        if (sub.endOfMonth) {
-          const y = expiryDate.getFullYear();
-          const m = expiryDate.getMonth() + sub.periodValue;
-          // 目标月最后一天：下月 day=0
-          expiryDate = new Date(y, m + 1, 0);
-        } else {
-          expiryDate.setMonth(expiryDate.getMonth() + sub.periodValue);
-        }
-      } else if (sub.periodUnit === 'year') {
-        expiryDate.setFullYear(expiryDate.getFullYear() + sub.periodValue);
+    while (getTimezoneMidnightTimestamp(expiryDate, tz) <= nowMidnight) {
+      if (mode === 'reset') {
+        // 重置：从「现在」所在本地日重新起算一个周期
+        const p = getTimezoneDateParts(now, tz);
+        expiryDate = atTimezoneMidnight(p.year, p.month, p.day);
       }
+      expiryDate = addCalendarPeriodInTimezone(
+        expiryDate,
+        sub.periodValue || 1,
+        sub.periodUnit || 'month',
+        tz,
+        { endOfMonth: !!sub.endOfMonth }
+      );
       periodsAdded++;
       if (periodsAdded > 120) break;
     }
@@ -335,7 +411,6 @@ function autoRenew(sub, now, timezone, config) {
 
   const newStartDate = mode === 'reset' ? new Date(now) : new Date(sub.expiryDate);
   const newExpiryDate = expiryDate;
-  void timezone;
 
   const paymentRecord = {
     id: Date.now().toString(),

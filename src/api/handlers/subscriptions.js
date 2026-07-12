@@ -96,7 +96,15 @@ async function handleSubscriptions(request, env, path) {
     }
 
     if (method === 'POST') {
-      const subscription = await request.json();
+      let subscription;
+      try {
+        subscription = await request.json();
+      } catch {
+        return new Response(
+          JSON.stringify({ success: false, message: '请求体不是合法 JSON' }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
       const result = await createSubscription(subscription, env);
       // 创建成功后写入提醒规则，并同步 legacy 提醒字段（列表展示依赖）
       if (result.success && result.subscription) {
@@ -175,12 +183,38 @@ async function handleSubscriptions(request, env, path) {
 
     if (method === 'GET') {
       const subscription = await getSubscription(id, env);
+      if (!subscription) {
+        return new Response(
+          JSON.stringify({ success: false, message: '订阅不存在' }),
+          { status: 404, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
       return new Response(JSON.stringify(subscription), { headers: { 'Content-Type': 'application/json' } });
     }
 
     if (method === 'PUT') {
-      const subscription = await request.json();
+      let subscription;
+      try {
+        subscription = await request.json();
+      } catch {
+        return new Response(
+          JSON.stringify({ success: false, message: '请求体不是合法 JSON' }),
+          { status: 400, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
       const result = await updateSubscription(id, subscription, env);
+      // 与创建路径对称：若 body 带 reminderRules 则整体替换并同步 legacy
+      if (result.success && Array.isArray(subscription.reminderRules)) {
+        try {
+          const remindersRepo = await import('../../data/reminders.repo.js');
+          const { syncLegacyReminderFields } = await import('../../data/subscriptions.js');
+          const rules = subscription.reminderRules.map(remindersRepo.normalizeRule);
+          await remindersRepo.replaceForSubscription(env, id, rules);
+          await syncLegacyReminderFields(env, id, rules);
+        } catch (err) {
+          console.error('[subscriptions] 更新提醒规则失败（订阅本体已更新）:', err);
+        }
+      }
       return new Response(JSON.stringify(result), { status: result.success ? 200 : 400, headers: { 'Content-Type': 'application/json' } });
     }
 

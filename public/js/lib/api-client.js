@@ -29,6 +29,19 @@
     } catch {
       // 非 JSON 响应，保留 null
     }
+    if (res.status === 401) {
+      try {
+        if (typeof window !== 'undefined' && window.location && !String(window.location.pathname || '').match(/^\/?$/)) {
+          window.location.href = '/';
+        }
+      } catch (_) { /* ignore */ }
+      const err = new Error((data && data.message) || '未授权访问');
+      // @ts-ignore
+      err.status = 401;
+      // @ts-ignore
+      err.body = data;
+      throw err;
+    }
     if (!res.ok) {
       const err = new Error((data && data.message) || ('HTTP ' + res.status));
       // @ts-ignore

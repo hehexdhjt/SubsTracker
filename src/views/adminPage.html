@@ -3447,6 +3447,13 @@ const lunarBiz = {
         useLunar: document.getElementById('useLunar').checked,
         endOfMonth: !!(document.getElementById('endOfMonth') && document.getElementById('endOfMonth').checked && !document.getElementById('useLunar').checked)
       };
+
+      // 显式附带多规则，避免 window.fetch 劫持
+      if (window.ReminderRulesEditor && typeof window.ReminderRulesEditor.collect === 'function') {
+        subscription.reminderRules = window.ReminderRulesEditor.collect();
+      } else if (Array.isArray(window.__pendingReminderRules)) {
+        subscription.reminderRules = window.__pendingReminderRules;
+      }
       
       const submitButton = e.target.querySelector('button[type="submit"]');
       const originalContent = submitButton.innerHTML;
@@ -3895,14 +3902,16 @@ const lunarBiz = {
         return collect();
       }
 
-      // 暴露给外部表单提交逻辑使用
+      // 暴露给表单 submit / 克隆逻辑（不再劫持 window.fetch）
       window.ReminderRulesEditor = {
         setRules,
+        collect,
+        getRules,
         setPresets: () => setRules(defaultPresets()),
         clear: () => setRules([]),
-        getRules,
         defaultPresets
       };
+      window.__setReminderRules = setRules;
 
       // 按钮事件
       document.addEventListener('DOMContentLoaded', () => {
@@ -3931,57 +3940,6 @@ const lunarBiz = {
           setTimeout(() => setRules(defaultPresets()), 0);
         });
       }
-
-      // 钩入表单提交：把规则数组塞进 body
-      const form = document.getElementById('subscriptionForm');
-      if (form) {
-        // 监听 fetch 调用是不可行的；改为劫持原始 submit handler
-        // 简单做法：直接拦截 submit 事件，在 capture 阶段先收集规则到一个全局变量
-        // 然后在 submit 流程中，原 handler 读取 subscription 之后我们加上 reminderRules
-        // 由于我们改不了原 handler，改用 body 修补方案：在 submit 之后再单独同步规则
-        form.addEventListener('submit', () => {
-          window.__pendingReminderRules = collect();
-        }, true);
-      }
-
-      // 监听 fetch 全局，在订阅请求里附带 reminderRules（最简单的劫持）
-      const originalFetch = window.fetch;
-      window.fetch = function (input, init) {
-        try {
-          if (init && init.method && init.body && /\/api\/subscriptions(?:\/[^/]+)?$/.test(typeof input === 'string' ? input : input.url || '')) {
-            const m = String(init.method).toUpperCase();
-            if ((m === 'POST' || m === 'PUT') && window.__pendingReminderRules) {
-              const body = JSON.parse(init.body);
-              body.reminderRules = window.__pendingReminderRules;
-              init.body = JSON.stringify(body);
-            }
-          }
-        } catch (e) { /* ignore */ }
-        return originalFetch.call(this, input, init).then(async (resp) => {
-          // 编辑模式（PUT）：调用 PUT /api/subscriptions/:id/reminders 同步替换规则
-          try {
-            const url = typeof input === 'string' ? input : (input.url || '');
-            if (
-              init && init.method && String(init.method).toUpperCase() === 'PUT' &&
-              /\/api\/subscriptions\/[^/]+$/.test(url) && resp.ok && window.__pendingReminderRules
-            ) {
-              const id = url.split('/').pop();
-              const rulesNow = window.__pendingReminderRules;
-              window.__pendingReminderRules = null;
-              await originalFetch('/api/subscriptions/' + id + '/reminders', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body: JSON.stringify({ rules: rulesNow })
-              }).catch(err => console.warn('[reminders] 同步规则失败:', err));
-            } else if (init && init.method && String(init.method).toUpperCase() === 'POST') {
-              // POST 由后端在创建时一并应用 reminderRules（见 extras 路由），这里清空缓存
-              window.__pendingReminderRules = null;
-            }
-          } catch (e) { /* ignore */ }
-          return resp;
-        });
-      };
     })();
 
     // 编辑订阅时拉取规则（钩在 editSubscription / subscription detail 加载之后）

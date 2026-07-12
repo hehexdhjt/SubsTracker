@@ -126,6 +126,27 @@ export async function handleExportBackup(request, env) {
  * @param {any} raw
  * @returns {{ ok: true, backup: any } | { ok: false, message: string }}
  */
+/**
+ * @param {any} sub
+ * @param {number} index
+ * @returns {string|null} 错误信息
+ */
+function validateSubscriptionEntry(sub, index) {
+  if (!sub || typeof sub !== 'object') {
+    return `subscriptions[${index}] 不是对象`;
+  }
+  if (typeof sub.id !== 'string' || !sub.id.trim()) {
+    return `subscriptions[${index}] 缺少有效 id`;
+  }
+  if (typeof sub.name !== 'string' || !sub.name.trim()) {
+    return `subscriptions[${index}] 缺少 name`;
+  }
+  if (!sub.expiryDate || Number.isNaN(new Date(sub.expiryDate).getTime())) {
+    return `subscriptions[${index}] 缺少有效 expiryDate`;
+  }
+  return null;
+}
+
 function validateBackup(raw) {
   if (!raw || typeof raw !== 'object') {
     return { ok: false, message: '备份内容不是有效 JSON 对象' };
@@ -138,6 +159,13 @@ function validateBackup(raw) {
   }
   if (!Array.isArray(raw.subscriptions)) {
     return { ok: false, message: '备份缺少 subscriptions 数组' };
+  }
+  for (let i = 0; i < raw.subscriptions.length; i++) {
+    const err = validateSubscriptionEntry(raw.subscriptions[i], i);
+    if (err) return { ok: false, message: err };
+  }
+  if (raw.reminderRules != null && typeof raw.reminderRules !== 'object') {
+    return { ok: false, message: 'reminderRules 必须是对象' };
   }
   return { ok: true, backup: raw };
 }
@@ -202,29 +230,15 @@ export async function handleImportBackup(request, env) {
     }
     const backup = /** @type {any} */ (validated).backup;
 
-    // 1) 配置
-    const currentConfig = await getConfig(env);
-    if (backup.config && typeof backup.config === 'object') {
-      const merged = mergeConfig(currentConfig, backup.config, includeSecrets);
-      await setConfig(env, merged);
-    }
-
-    // 2) 分类
-    if (Array.isArray(backup.categories)) {
-      const cats = backup.categories
-        .filter((c) => typeof c === 'string' && c.trim())
-        .map((c) => c.trim());
-      if (mode === 'replace') {
-        await putKVJson(env, 'categories', [...new Set(cats)].sort());
-      } else {
-        const existing = await getCategories(env);
-        const set = new Set([...existing, ...cats]);
-        await putKVJson(env, 'categories', [...set].sort());
-      }
-    }
-
-    // 3) 订阅 + 规则
+    // 先写订阅/规则，再写配置：避免配置已改但数据半残
     const incomingSubs = backup.subscriptions.filter((s) => s && typeof s.id === 'string' && s.id);
+    if (mode === 'replace' && incomingSubs.length === 0) {
+      return json(
+        { success: false, message: '覆盖模式拒绝空订阅列表（请确认备份完整或改用合并模式）' },
+        400
+      );
+    }
+
     const rulesMap =
       backup.reminderRules && typeof backup.reminderRules === 'object' ? backup.reminderRules : {};
 
@@ -254,7 +268,6 @@ export async function handleImportBackup(request, env) {
         const normalized = rules.map((r) => remindersRepo.normalizeRule(r));
         await remindersRepo.replaceForSubscription(env, sub.id, normalized);
         importedRules += normalized.length;
-        // 同步 legacy 字段
         try {
           const { syncLegacyReminderFields } = await import('../../data/subscriptions.js');
           await syncLegacyReminderFields(env, sub.id, normalized);
@@ -262,6 +275,27 @@ export async function handleImportBackup(request, env) {
           /* ignore */
         }
       }
+    }
+
+    // 分类
+    if (Array.isArray(backup.categories)) {
+      const cats = backup.categories
+        .filter((c) => typeof c === 'string' && c.trim())
+        .map((c) => c.trim());
+      if (mode === 'replace') {
+        await putKVJson(env, 'categories', [...new Set(cats)].sort());
+      } else {
+        const existing = await getCategories(env);
+        const set = new Set([...existing, ...cats]);
+        await putKVJson(env, 'categories', [...set].sort());
+      }
+    }
+
+    // 配置放最后
+    const currentConfig = await getConfig(env);
+    if (backup.config && typeof backup.config === 'object') {
+      const merged = mergeConfig(currentConfig, backup.config, includeSecrets);
+      await setConfig(env, merged);
     }
 
     return json({

@@ -65,25 +65,6 @@ async function getConfig(env) {
   };
 }
 
-async function updateConfig(env, newConfig) {
-  const config = await getConfig(env);
-  const updatedConfig = {
-    ...config,
-    ADMIN_USERNAME: newConfig.ADMIN_USERNAME || config.ADMIN_USERNAME,
-    ADMIN_PASSWORD: newConfig.ADMIN_PASSWORD || config.ADMIN_PASSWORD,
-    THEME_MODE: newConfig.THEME_MODE || 'system',
-    TIMEZONE: newConfig.TIMEZONE || config.TIMEZONE || 'UTC',
-    SHOW_LUNAR: newConfig.SHOW_LUNAR === true,
-    NOTIFYX_API_KEY: newConfig.NOTIFYX_API_KEY || '',
-    RESEND_API_KEY: newConfig.RESEND_API_KEY || '',
-    THIRD_PARTY_API_TOKEN: newConfig.THIRD_PARTY_API_TOKEN || '',
-    DEBUG_LOGS: newConfig.DEBUG_LOGS === true
-  };
-
-  await env.SUBSCRIPTIONS_KV.put('config', JSON.stringify(updatedConfig));
-  return updatedConfig;
-}
-
 async function setConfig(env, config) {
   await putKVJson(env, 'config', config);
 }
@@ -91,6 +72,5 @@ async function setConfig(env, config) {
 export {
   DEFAULT_CONFIG,
   getConfig,
-  updateConfig,
   setConfig
 };
