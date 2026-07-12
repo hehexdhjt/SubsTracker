@@ -1709,15 +1709,15 @@ const lunarBiz = {
         if (subscription.notes) {
           const notes = subscription.notes;
           if (notes.length > 50) {
-            const truncatedNotes = notes.substring(0, 50) + '...';
+            const truncatedNotes = escapeHtml(notes.substring(0, 50)) + '...';
             notesHtml = '<div class="notes-container">' +
-              '<div class="notes-text text-xs text-gray-500" data-full-notes="' + notes.replace(/"/g, '&quot;') + '">' +
+              '<div class="notes-text text-xs text-gray-500" data-full-notes="' + escapeHtml(notes).replace(/"/g, '&quot;') + '">' +
                 truncatedNotes +
               '</div>' +
               '<div class="notes-tooltip"></div>' +
             '</div>';
           } else {
-            notesHtml = '<div class="text-xs text-gray-500">' + notes + '</div>';
+            notesHtml = '<div class="text-xs text-gray-500">' + escapeHtml(notes) + '</div>';
           }
         }
 
@@ -1733,7 +1733,7 @@ const lunarBiz = {
         const categoryTokens = normalizeCategoryTokens(subscription.category);
         const categoryHtml = categoryTokens.length
           ? '<div class="flex flex-wrap gap-2 mt-2">' + categoryTokens.map(cat =>
-              '<span class="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-xs rounded-full"><i class="fas fa-tag mr-1"></i>' + cat + '</span>'
+              '<span class="px-2 py-0.5 bg-indigo-50 text-indigo-600 text-xs rounded-full"><i class="fas fa-tag mr-1"></i>' + escapeHtml(cat) + '</span>'
             ).join('') + '</div>'
           : '';
 

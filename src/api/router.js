@@ -22,6 +22,12 @@ async function handleApiRequest(request, env) {
     return handleLogout();
   }
 
+  // 第三方通知 API 使用独立 token 鉴权，必须在 JWT 门禁之前放行
+  if (path.startsWith('/notify/')) {
+    const thirdPartyResponse = await handleThirdPartyNotify(request, env, config, url);
+    if (thirdPartyResponse) return thirdPartyResponse;
+  }
+
   const { user } = await getUserFromRequest(request, env);
   if (!user && path !== '/login') {
     return new Response(

@@ -420,6 +420,13 @@ async function deleteSubscription(id, env) {
   try {
     const ok = await subRepo.deleteById(env, id);
     if (!ok) return { success: false, message: '订阅不存在' };
+    // 联动清理提醒规则，避免孤儿 reminder_rules:{id}
+    try {
+      const remindersRepo = await import('./reminders.repo.js');
+      await remindersRepo.clearForSubscription(env, id);
+    } catch (err) {
+      console.error('[subscriptions] 清理提醒规则失败（订阅已删除）:', err);
+    }
     return { success: true };
   } catch (error) {
     console.error('[subscriptions] 删除订阅失败:', error);
