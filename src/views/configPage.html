@@ -622,6 +622,53 @@
           </button>
         </div>
       </form>
+
+      <!-- 备份与恢复（不在 configForm 内，避免触发表单提交） -->
+      <div class="config-section active mt-8" id="backupSection">
+        <h3 class="text-lg font-semibold text-gray-800 mb-2">
+          <i class="fas fa-file-export text-indigo-500 mr-2"></i>数据备份与恢复
+        </h3>
+        <p class="text-sm text-gray-500 mb-4">
+          导出系统配置、订阅列表与提醒规则，便于换账号部署或升级迁移。
+          默认导出<strong>不含</strong> Bot Token / API Key 等密钥；需要时可勾选「包含敏感配置」。
+        </p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="bg-white border border-gray-200 rounded-lg p-4">
+            <h4 class="text-sm font-semibold text-gray-700 mb-3"><i class="fas fa-download mr-1"></i>导出备份</h4>
+            <label class="inline-flex items-center text-sm text-gray-700 mb-3 cursor-pointer">
+              <input type="checkbox" id="exportIncludeSecrets" class="form-checkbox h-4 w-4 text-indigo-600 rounded border-gray-300">
+              <span class="ml-2">包含敏感配置（Token / 密码等）</span>
+            </label>
+            <p class="text-xs text-amber-600 mb-3">勾选后请妥善保管 JSON 文件，勿上传公开仓库。</p>
+            <button type="button" id="exportBackupBtn" class="btn-secondary text-white px-4 py-2 rounded-md text-sm font-medium">
+              <i class="fas fa-file-download mr-2"></i>下载备份 JSON
+            </button>
+          </div>
+
+          <div class="bg-white border border-gray-200 rounded-lg p-4">
+            <h4 class="text-sm font-semibold text-gray-700 mb-3"><i class="fas fa-upload mr-1"></i>导入恢复</h4>
+            <input type="file" id="importBackupFile" accept="application/json,.json" class="block w-full text-sm text-gray-600 mb-3">
+            <div class="flex flex-col gap-2 mb-3">
+              <label class="inline-flex items-center text-sm text-gray-700 cursor-pointer">
+                <input type="radio" name="importMode" value="merge" class="form-radio h-4 w-4 text-indigo-600" checked>
+                <span class="ml-2">合并（按 ID 覆盖同名订阅，保留其余）</span>
+              </label>
+              <label class="inline-flex items-center text-sm text-gray-700 cursor-pointer">
+                <input type="radio" name="importMode" value="replace" class="form-radio h-4 w-4 text-indigo-600">
+                <span class="ml-2">覆盖（删除现有订阅后整包导入）</span>
+              </label>
+              <label class="inline-flex items-center text-sm text-gray-700 cursor-pointer">
+                <input type="checkbox" id="importIncludeSecrets" class="form-checkbox h-4 w-4 text-indigo-600 rounded border-gray-300">
+                <span class="ml-2">应用备份中的敏感配置（仅当备份含密钥时有效）</span>
+              </label>
+            </div>
+            <button type="button" id="importBackupBtn" class="btn-warning text-white px-4 py-2 rounded-md text-sm font-medium">
+              <i class="fas fa-file-import mr-2"></i>从文件恢复
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1488,6 +1535,111 @@
       // 启动时先 fire 一次，并每 30s 自动刷新（小时跨边界时也能更新）
       setTimeout(update, 200);
       setInterval(update, 30000);
+    })();
+
+    // ───────────────────────────────────────────────────────
+    // 备份导出 / 导入恢复
+    // ───────────────────────────────────────────────────────
+    (function () {
+      const exportBtn = document.getElementById('exportBackupBtn');
+      const importBtn = document.getElementById('importBackupBtn');
+      if (!exportBtn || !importBtn) return;
+
+      exportBtn.addEventListener('click', async () => {
+        const includeSecrets = document.getElementById('exportIncludeSecrets').checked;
+        if (includeSecrets && !confirm('将导出包含 Token / 密钥的完整备份，请确认文件会安全保存。继续？')) {
+          return;
+        }
+        const original = exportBtn.innerHTML;
+        exportBtn.disabled = true;
+        exportBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>导出中...';
+        try {
+          const url = '/api/backup?includeSecrets=' + (includeSecrets ? '1' : '0');
+          const res = await apiFetch(url);
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.message || ('HTTP ' + res.status));
+          }
+          const blob = await res.blob();
+          const a = document.createElement('a');
+          const objectUrl = URL.createObjectURL(blob);
+          a.href = objectUrl;
+          a.download = 'substracker-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(objectUrl);
+          showToast('备份已下载', 'success');
+        } catch (e) {
+          if (e && e.message === 'AUTH_EXPIRED') return;
+          console.error(e);
+          showToast('导出失败: ' + (e.message || e), 'error');
+        } finally {
+          exportBtn.disabled = false;
+          exportBtn.innerHTML = original;
+        }
+      });
+
+      importBtn.addEventListener('click', async () => {
+        const fileInput = document.getElementById('importBackupFile');
+        const file = fileInput && fileInput.files && fileInput.files[0];
+        if (!file) {
+          showToast('请先选择备份 JSON 文件', 'warning');
+          return;
+        }
+        const modeEl = document.querySelector('input[name="importMode"]:checked');
+        const mode = modeEl ? modeEl.value : 'merge';
+        const includeSecrets = document.getElementById('importIncludeSecrets').checked;
+
+        if (mode === 'replace' && !confirm('覆盖模式会删除当前全部订阅后再导入，且不可撤销。确定继续？')) {
+          return;
+        }
+        if (!confirm('确认从备份恢复？建议先导出一份当前数据作为回滚。')) {
+          return;
+        }
+
+        const original = importBtn.innerHTML;
+        importBtn.disabled = true;
+        importBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>恢复中...';
+        try {
+          const text = await file.text();
+          let backup;
+          try {
+            backup = JSON.parse(text);
+          } catch {
+            throw new Error('文件不是合法 JSON');
+          }
+          const res = await apiFetch('/api/restore', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ backup, mode, includeSecrets })
+          });
+          const result = await res.json().catch(() => ({}));
+          if (!res.ok || !result.success) {
+            throw new Error(result.message || ('HTTP ' + res.status));
+          }
+          const stats = result.stats || {};
+          showToast(
+            '恢复成功：订阅 ' + (stats.subscriptions || 0) +
+            ' 条，规则 ' + (stats.reminderRules || 0) + ' 条',
+            'success',
+            5000
+          );
+          // 重新加载配置表单
+          if (typeof loadConfig === 'function') {
+            try { loadConfig(); } catch (_) { /* ignore */ }
+          } else {
+            setTimeout(function () { location.reload(); }, 800);
+          }
+        } catch (e) {
+          if (e && e.message === 'AUTH_EXPIRED') return;
+          console.error(e);
+          showToast('恢复失败: ' + (e.message || e), 'error', 6000);
+        } finally {
+          importBtn.disabled = false;
+          importBtn.innerHTML = original;
+        }
+      });
     })();
   </script>
 </body>
